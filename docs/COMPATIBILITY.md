@@ -63,6 +63,39 @@ Rows marked ❌ on every platform are missing features rather than platform prob
 | Android 15 emulator (API 35, arm64) | Apple M1, 8 GB | SwiftShader | `cf5af0d` (display cutout, #170) | 2026-09-27 |
 | Android 10 emulator (API 29, arm64) | Apple M1, 8 GB | SwiftShader | `cf5af0d` (display cutout, #170) | 2026-09-27 |
 
+## Android device performance checks (2026-10-11)
+
+Redmi 12C, Android 14/API 34, arm64-v8a, MediaTek MT6769V/CZ and Mali-G52 MC2
+with Vulkan 1.1.177/driver r32p1. These are bounded opening-movie, menu and
+stationary village checks, separate from the emulator gameplay matrix above.
+Hunts, multiplayer, audio quality and long-session stability were not checked.
+
+The installed `0.7.0-test.1`/version code 369 APK did not record its source
+commit. A separate diagnostic package retained its native libraries byte for
+byte and used copied save/settings data. Each comparison loaded the same test
+character at the village entrance with Fill aspect, Vsync on, GPU compatibility
+Auto (self-test passed, compatibility mode stayed off), and sharp text/UI
+textures off. The table gives medians of the final eight one-second gameplay
+samples from each finite run; startup and loading spikes are excluded.
+
+| Native build | Resolution | Frame-rate setting | Presented fps | Game speed | GPU ms per game frame |
+| --- | --- | --- | --- | --- | --- |
+| Installed code 369; source commit unknown | Auto, 1650×720 | 60, Lower when behind on; fell to 30 | 23.4 | 78% | 36.2 |
+| Installed code 369; source commit unknown | ×2, 1247×544 | 30 | 24.9 | 83% | 33.0 |
+| Installed code 369; source commit unknown | ×1, 623×272 | 60, Lower when behind on; fell to 30 | 30.0 | 100% | 17.8 |
+| `bbf8f09`, NDK r28c/API 29 Release | ×1, 623×272 | 30 | 30.0 | 100% | 17.8 |
+
+At screen resolution the GPU exceeded the 33.3 ms budget for the game's own
+30 frames a second, even after interpolation was reduced. ×1 with an explicit
+30 fps target was the highest tested resolution that retained full speed on
+this device. It trades detail for speed; it is not a universal Mali preset or
+a renderer optimization. Current-source validation reused compatible generated
+objects and all 355 Android overlays, with SDL audio and FFmpeg enabled. Game
+captures were inspected and owned test processes stopped. The current-source
+steady samples ranged from 29.9 to 30.1 fps and 100% to 101% game speed; the
+largest per-second frame maximum in those samples was 37.4 ms, so full speed
+does not mean every frame interval was identical.
+
 ## Coverage-expansion device checks (2026-10-04)
 
 These bounded checks validate the coverage-expansion branch; they do not replace the full manual gameplay matrix above. Compatible generated code and prebuilt overlays were reused.
