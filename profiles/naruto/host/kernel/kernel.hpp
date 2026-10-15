@@ -76,7 +76,9 @@ inline constexpr std::uint32_t kBootArgumentAddress = 0x08100000u;
 inline constexpr std::uint32_t kInterruptStackTop = 0x08200000u;
 inline constexpr std::uint32_t kVolatileMemoryBase = 0x08400000u;
 inline constexpr std::uint32_t kVolatileMemorySize = 0x00400000u;
-inline constexpr std::uint32_t kUserMemoryEnd = 0x0C000000u;
+// End of user memory for a 32 MiB PSP (0x08000000 + 32 MiB); must agree with
+// kGuestRamBytes in mhp3rd_profile.hpp.
+inline constexpr std::uint32_t kUserMemoryEnd = 0x0A000000u;
 
 inline constexpr std::uint64_t kVBlankPeriodUs = 16'683u;
 inline constexpr std::uint64_t kHostWaitPollUs = 1'000u;
