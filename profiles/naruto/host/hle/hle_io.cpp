@@ -29,7 +29,14 @@ constexpr std::uint32_t kBadFileDescriptor = 0x80010009u;
 constexpr std::uint32_t kDeviceNotFound = 0x80010013u;
 constexpr std::uint32_t kInvalidArgument = 0x80010016u;
 constexpr std::uint32_t kReadOnly = 0x8001001Eu;
+// No asynchronous operation is pending on the descriptor.
+constexpr std::uint32_t kNoAsync = 0x80020329u;
 } // namespace io_error
+
+// A 32-bit PSP error code as the signed 64-bit result some calls return.
+constexpr std::int64_t wide_error(std::uint32_t code) {
+    return static_cast<std::int64_t>(static_cast<std::int32_t>(code));
+}
 
 constexpr std::uint32_t kOpenWrite = 0x0002u;
 constexpr std::uint32_t kOpenAppend = 0x0100u;
@@ -49,6 +56,10 @@ struct OpenFile {
     // gets there (host/mods/mhp3rd_mods.hpp). Byte 0 is this far into it.
     bool archive{};
     std::uint64_t archive_offset{};
+    // The *Async calls finish their work at once and leave the result here for
+    // sceIoWaitAsync/sceIoPollAsync; a closed descriptor lingers until then.
+    std::optional<std::int64_t> async_result;
+    bool close_pending{};
 };
 
 struct IoState {
@@ -221,6 +232,83 @@ std::size_t read_disc(const OpenFile &file, std::uint64_t offset, std::span<std:
     return io().disc->read(file.disc_offset + offset, out);
 }
 
+// sceIoRead and sceIoReadAsync: bytes read into guest memory, or an error.
+std::uint32_t read_file(Runtime &rt, std::uint32_t fd, std::uint32_t address, std::uint32_t requested) {
+    auto found = io().files.find(fd);
+    if (found == io().files.end() || found->second.kind == OpenFile::Kind::Directory || found->second.close_pending)
+        return io_error::kBadFileDescriptor;
+    OpenFile &file = found->second;
+    std::vector<std::uint8_t> buffer;
+    if (file.kind == OpenFile::Kind::Disc) {
+        const std::uint64_t available = file.position < file.size ? file.size - file.position : 0u;
+        requested = static_cast<std::uint32_t>(std::min<std::uint64_t>(requested, available));
+        buffer.resize(requested);
+        const std::size_t count = read_disc(file, file.position, buffer);
+        buffer.resize(count);
+    } else {
+        buffer.resize(requested);
+        file.host->clear();
+        file.host->seekg(static_cast<std::streamoff>(file.position));
+        file.host->read(reinterpret_cast<char *>(buffer.data()), requested);
+        buffer.resize(static_cast<std::size_t>(file.host->gcount()));
+    }
+    rt.memory().copy_in(address, buffer);
+    // A disc read is what tells a load from play (kernel/fast_loading.hpp).
+    if (file.kind == OpenFile::Kind::Disc) {
+        load_trace::note_disc_read(buffer.size());
+        fast_loading::note_disc_read();
+        // A read inside DATA.BIN may carry a text block the translation
+        // replaces, in place, before the game copies it out
+        // (text/translation.hpp).
+        if (file.archive) text::translate_read(file.archive_offset + file.position, buffer);
+    } else {
+        load_trace::note_memory_stick_read(buffer.size());
+    }
+    if (trace_io())
+        std::cerr << "[io] read fd=" << fd << " " << file.path << " offset=" << file.position
+                  << " size=" << buffer.size() << " -> " << psprecomp::hex32(address) << "\n";
+    file.position += buffer.size();
+    return static_cast<std::uint32_t>(buffer.size());
+}
+
+// sceIoLseek and sceIoLseekAsync: the new position, or a widened error.
+std::int64_t seek_file(std::uint32_t fd, std::int64_t offset, std::uint32_t whence) {
+    auto found = io().files.find(fd);
+    if (found == io().files.end() || found->second.close_pending) return wide_error(io_error::kBadFileDescriptor);
+    OpenFile &file = found->second;
+    std::int64_t base = 0;
+    switch (whence) {
+    case 0u:
+        base = 0;
+        break;
+    case 1u:
+        base = static_cast<std::int64_t>(file.position);
+        break;
+    case 2u:
+        base = static_cast<std::int64_t>(file.size);
+        break;
+    default:
+        return wide_error(io_error::kInvalidArgument);
+    }
+    const std::int64_t target = base + offset;
+    if (target < 0) return wide_error(io_error::kInvalidArgument);
+    file.position = static_cast<std::uint64_t>(target);
+    if (trace_io()) std::cerr << "[io] lseek fd=" << fd << " " << file.path << " -> " << file.position << "\n";
+    return target;
+}
+
+// Records the result of an *Async call that already did its work; v0 of the
+// call itself is 0, or the error when the descriptor is not open.
+void finish_async(AllegrexContext &ctx, std::uint32_t fd, std::int64_t result) {
+    auto found = io().files.find(fd);
+    if (found == io().files.end()) {
+        kernel().finish(ctx, io_error::kBadFileDescriptor);
+        return;
+    }
+    found->second.async_result = result;
+    kernel().finish(ctx, 0u);
+}
+
 } // namespace
 
 std::size_t read_open_file(std::uint32_t fd, std::uint64_t offset, std::uint8_t *output, std::size_t size) {
@@ -261,45 +349,7 @@ void register_io(
         kernel().finish(ctx, io().files.erase(arg(ctx, 0)) != 0u ? 0u : io_error::kBadFileDescriptor);
     });
     hle.add("IoFileMgrForUser", "sceIoRead", [](Runtime &rt, AllegrexContext &ctx) {
-        auto found = io().files.find(arg(ctx, 0));
-        if (found == io().files.end() || found->second.kind == OpenFile::Kind::Directory) {
-            kernel().finish(ctx, io_error::kBadFileDescriptor);
-            return;
-        }
-        OpenFile &file = found->second;
-        const std::uint32_t address = arg(ctx, 1);
-        std::uint32_t requested = arg(ctx, 2);
-        std::vector<std::uint8_t> buffer;
-        if (file.kind == OpenFile::Kind::Disc) {
-            const std::uint64_t available = file.position < file.size ? file.size - file.position : 0u;
-            requested = static_cast<std::uint32_t>(std::min<std::uint64_t>(requested, available));
-            buffer.resize(requested);
-            const std::size_t count = read_disc(file, file.position, buffer);
-            buffer.resize(count);
-        } else {
-            buffer.resize(requested);
-            file.host->clear();
-            file.host->seekg(static_cast<std::streamoff>(file.position));
-            file.host->read(reinterpret_cast<char *>(buffer.data()), requested);
-            buffer.resize(static_cast<std::size_t>(file.host->gcount()));
-        }
-        rt.memory().copy_in(address, buffer);
-        // A disc read is what tells a load from play (kernel/fast_loading.hpp).
-        if (file.kind == OpenFile::Kind::Disc) {
-            load_trace::note_disc_read(buffer.size());
-            fast_loading::note_disc_read();
-            // A read inside DATA.BIN may carry a text block the translation
-            // replaces, in place, before the game copies it out
-            // (text/translation.hpp).
-            if (file.archive) text::translate_read(file.archive_offset + file.position, buffer);
-        } else {
-            load_trace::note_memory_stick_read(buffer.size());
-        }
-        if (trace_io())
-            std::cerr << "[io] read fd=" << arg(ctx, 0) << " " << file.path << " offset=" << file.position
-                      << " size=" << buffer.size() << " -> " << psprecomp::hex32(address) << "\n";
-        file.position += buffer.size();
-        kernel().finish(ctx, static_cast<std::uint32_t>(buffer.size()));
+        kernel().finish(ctx, read_file(rt, arg(ctx, 0), arg(ctx, 1), arg(ctx, 2)));
     });
     hle.add("IoFileMgrForUser", "sceIoWrite", [](Runtime &rt, AllegrexContext &ctx) {
         const std::uint32_t fd = arg(ctx, 0);
@@ -329,37 +379,87 @@ void register_io(
         kernel().finish(ctx, size);
     });
     hle.add("IoFileMgrForUser", "sceIoLseek", [](Runtime &, AllegrexContext &ctx) {
-        auto found = io().files.find(arg(ctx, 0));
+        kernel().finish64(ctx, seek_file(arg(ctx, 0), static_cast<std::int64_t>(arg64(ctx, 2)), arg(ctx, 4)));
+    });
+
+    // Asynchronous I/O. Each *Async call does its work at once and keeps the
+    // result for sceIoWaitAsync(CB)/sceIoPollAsync, which hand it over once.
+    hle.add("IoFileMgrForUser", "sceIoOpenAsync", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::string path = read_cstring(rt.memory(), arg(ctx, 0), 256u);
+        const std::int64_t fd = open_file(path, arg(ctx, 1));
+        if (trace_io() || fd < 0)
+            std::cerr << "[io] open-async " << path << " flags=" << psprecomp::hex32(arg(ctx, 1)) << " -> "
+                      << psprecomp::hex32(static_cast<std::uint32_t>(fd)) << "\n";
+        if (fd < 0) {
+            kernel().finish(ctx, static_cast<std::uint32_t>(fd));
+            return;
+        }
+        io().files.at(static_cast<std::uint32_t>(fd)).async_result = fd;
+        kernel().finish(ctx, static_cast<std::uint32_t>(fd));
+    });
+    hle.add("IoFileMgrForUser", "sceIoReadAsync", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const std::uint32_t result = read_file(rt, fd, arg(ctx, 1), arg(ctx, 2));
+        if (result == io_error::kBadFileDescriptor) {
+            kernel().finish(ctx, result);
+            return;
+        }
+        finish_async(ctx, fd, wide_error(result));
+    });
+    hle.add("IoFileMgrForUser", "sceIoLseekAsync", [](Runtime &, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const std::int64_t result = seek_file(fd, static_cast<std::int64_t>(arg64(ctx, 2)), arg(ctx, 4));
+        if (result == wide_error(io_error::kBadFileDescriptor)) {
+            kernel().finish(ctx, io_error::kBadFileDescriptor);
+            return;
+        }
+        finish_async(ctx, fd, result);
+    });
+    // No ioctl command changes what this host serves (UMD seek/cache hints),
+    // so each completes with 0.
+    hle.add("IoFileMgrForUser", "sceIoIoctlAsync", [](Runtime &, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const auto found = io().files.find(fd);
+        if (found == io().files.end() || found->second.close_pending) {
+            kernel().finish(ctx, io_error::kBadFileDescriptor);
+            return;
+        }
+        log_once("ioctl:" + psprecomp::hex32(arg(ctx, 1)), "[io] ioctl-async command " + psprecomp::hex32(arg(ctx, 1)));
+        finish_async(ctx, fd, 0);
+    });
+    hle.add("IoFileMgrForUser", "sceIoCloseAsync", [](Runtime &, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const auto found = io().files.find(fd);
+        if (found == io().files.end() || found->second.close_pending) {
+            kernel().finish(ctx, io_error::kBadFileDescriptor);
+            return;
+        }
+        found->second.close_pending = true;
+        finish_async(ctx, fd, 0);
+    });
+    // Hands over the pending result as a 64-bit value; a closed descriptor
+    // goes away with it.
+    const auto take_async_result = [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const auto found = io().files.find(fd);
         if (found == io().files.end()) {
-            kernel().finish64(ctx, static_cast<std::int64_t>(static_cast<std::int32_t>(io_error::kBadFileDescriptor)));
+            kernel().finish(ctx, io_error::kBadFileDescriptor);
             return;
         }
-        OpenFile &file = found->second;
-        const auto offset = static_cast<std::int64_t>(arg64(ctx, 2));
-        std::int64_t base = 0;
-        switch (arg(ctx, 4)) {
-        case 0u:
-            base = 0;
-            break;
-        case 1u:
-            base = static_cast<std::int64_t>(file.position);
-            break;
-        case 2u:
-            base = static_cast<std::int64_t>(file.size);
-            break;
-        default:
-            kernel().finish64(ctx, static_cast<std::int64_t>(static_cast<std::int32_t>(io_error::kInvalidArgument)));
+        if (!found->second.async_result) {
+            kernel().finish(ctx, io_error::kNoAsync);
             return;
         }
-        const std::int64_t target = base + offset;
-        if (target < 0) {
-            kernel().finish64(ctx, static_cast<std::int64_t>(static_cast<std::int32_t>(io_error::kInvalidArgument)));
-            return;
-        }
-        file.position = static_cast<std::uint64_t>(target);
-        if (trace_io())
-            std::cerr << "[io] lseek fd=" << arg(ctx, 0) << " " << file.path << " -> " << file.position << "\n";
-        kernel().finish64(ctx, file.position);
+        store64(rt.memory(), arg(ctx, 1), static_cast<std::uint64_t>(*found->second.async_result));
+        found->second.async_result.reset();
+        if (found->second.close_pending) io().files.erase(found);
+        kernel().finish(ctx, 0u);
+    };
+    hle.add("IoFileMgrForUser", "sceIoWaitAsync", take_async_result);
+    hle.add("IoFileMgrForUser", "sceIoPollAsync", take_async_result);
+    hle.add("IoFileMgrForUser", "sceIoWaitAsyncCB", [take_async_result](Runtime &rt, AllegrexContext &ctx) {
+        (void)kernel().deliver_callbacks();
+        take_async_result(rt, ctx);
     });
     hle.add("IoFileMgrForUser", "sceIoGetstat", [](Runtime &rt, AllegrexContext &ctx) {
         const std::string path = read_cstring(rt.memory(), arg(ctx, 0), 256u);

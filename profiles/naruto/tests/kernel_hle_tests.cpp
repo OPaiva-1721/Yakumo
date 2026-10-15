@@ -672,6 +672,37 @@ void io_contracts() {
     check(static_cast<int>(disc) > 0 && call("sceIoRead", {disc, Fixture::output, 50}) == 8 &&
             mhp3rd::read_cstring(f.runtime.memory(), Fixture::output, 8) == "fixture!",
         "disc reads synthetic payload and clamps requested length");
+    {
+        constexpr unsigned no_async = 0x80020329u;
+        auto &memory = f.runtime.memory();
+        const unsigned result = Fixture::output + 64u;
+        const auto afd = path_call("sceIoOpenAsync", "disc0:/public.txt", 1);
+        check(static_cast<int>(afd) > 0, "async open returns a descriptor at once");
+        check(call("sceIoWaitAsync", {afd, result}) == 0 && memory.load32(result) == afd &&
+                memory.load32(result + 4) == 0,
+            "async open completes with the descriptor as its result");
+        check(call("sceIoWaitAsync", {afd, result}) == no_async, "nothing is pending once the result was taken");
+        check(call("sceIoReadAsync", {afd, Fixture::output, 50}) == 0, "async read starts");
+        check(call("sceIoPollAsync", {afd, result}) == 0 && memory.load32(result) == 8 &&
+                mhp3rd::read_cstring(memory, Fixture::output, 8) == "fixture!",
+            "polling a finished async read returns its length with the data in memory");
+        check(call("sceIoPollAsync", {afd, result}) == no_async, "a polled result is consumed");
+        check(call("sceIoLseekAsync", {afd, 0, 2, 0, 0}) == 0 && call("sceIoWaitAsyncCB", {afd, result}) == 0 &&
+                memory.load32(result) == 2 && memory.load32(result + 4) == 0,
+            "async seek completes with the new 64-bit position");
+        check(call("sceIoReadAsync", {afd, Fixture::output, 3}) == 0 && call("sceIoWaitAsync", {afd, result}) == 0 &&
+                memory.load32(result) == 3 && mhp3rd::read_cstring(memory, Fixture::output, 3) == "xtu",
+            "async read continues from the async seek position");
+        check(call("sceIoIoctlAsync", {afd, 0x01020001u, 0, 0, 0, 0}) == 0 &&
+                call("sceIoWaitAsync", {afd, result}) == 0 && memory.load32(result) == 0,
+            "async ioctl completes");
+        check(call("sceIoCloseAsync", {afd}) == 0 && call("sceIoWaitAsync", {afd, result}) == 0 &&
+                memory.load32(result) == 0 && call("sceIoClose", {afd}) == badfd,
+            "async close releases the descriptor once its result is taken");
+        check(call("sceIoReadAsync", {afd, Fixture::output, 1}) == badfd &&
+                call("sceIoWaitAsync", {afd, result}) == badfd,
+            "async operations on a closed descriptor are rejected");
+    }
     check(call("sceIoRead", {disc, Fixture::output, 1}) == 0 && mhp3rd::read_open_file(disc, 8, prefix.data(), 5) == 0,
         "disc EOF applies to both read interfaces");
     check(
