@@ -597,6 +597,19 @@ void register_display_ctrl(HleRegistrar &hle) {
         present_frame(rt);
         kernel().finish(ctx, 0u);
     });
+    // Waiting for the start of the next vblank parks the thread until
+    // Kernel::on_vblank(). The *CB variant first runs the thread's notified
+    // callbacks, like the other callback-aware waits.
+    const auto wait_vblank_start = [](Runtime &, AllegrexContext &ctx) {
+        WaitState wait{};
+        wait.type = WaitType::VBlank;
+        kernel().block(ctx, wait, 0u);
+    };
+    hle.add("sceDisplay", "sceDisplayWaitVblankStart", wait_vblank_start);
+    hle.add("sceDisplay", "sceDisplayWaitVblankStartCB", [wait_vblank_start](Runtime &rt, AllegrexContext &ctx) {
+        (void)kernel().deliver_callbacks();
+        wait_vblank_start(rt, ctx);
+    });
 
     hle.add("sceCtrl", "sceCtrlSetSamplingCycle", [](Runtime &, AllegrexContext &ctx) {
         const std::uint32_t previous = media().ctrl_cycle;

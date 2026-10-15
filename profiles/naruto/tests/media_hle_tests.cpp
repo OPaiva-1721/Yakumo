@@ -360,6 +360,22 @@ void mpeg_contracts(Fixture &f) {
         "MPEG lifetime cleanup failed");
 }
 
+void display_vblank_contracts() {
+    for (const char *name : {"sceDisplayWaitVblankStart", "sceDisplayWaitVblankStartCB"}) {
+        Fixture f;
+        const auto waiter = f.kernel.current_uid();
+        const auto other = f.kernel.create_thread("other", 0x08824000u, 0x30u, 0x1000u, 0u, 0x08801000u);
+        check(other > 0 && f.kernel.start_thread(f.cpu, other, 0u, 0u) == 0, "second thread starts");
+        f.call("sceDisplay", name);
+        const mhp3rd::Thread *thread = f.kernel.find_thread(waiter);
+        check(thread != nullptr && thread->status == mhp3rd::ThreadStatus::Waiting &&
+                thread->wait.type == mhp3rd::WaitType::VBlank,
+            "waiting for vblank start blocks the caller until the next vblank");
+        f.kernel.on_vblank();
+        check(thread->status == mhp3rd::ThreadStatus::Ready, "the next vblank releases the waiter");
+    }
+}
+
 }
 int main() {
     try {
@@ -367,6 +383,7 @@ int main() {
         audio_display_contracts(fixture);
         atrac_contracts(fixture);
         mpeg_contracts(fixture);
+        display_vblank_contracts();
         std::cout << "Media HLE contracts passed\n";
         return 0;
     } catch (const std::exception &error) {
