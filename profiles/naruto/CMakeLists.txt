@@ -234,6 +234,8 @@ set(MHP3RD_HOST_SOURCES
     host/adhoc/discovery.cpp
     host/adhoc/host.cpp
     host/adhoc/server.cpp
+    host/crypto/keys_file.cpp
+    host/crypto/pgd.cpp
     host/save_data/aes128.cpp
     host/save_data/param_sfo.cpp
     host/save_data/savedata_crypto.cpp
@@ -436,6 +438,22 @@ target_include_directories(mhp3rd_savedata_tests PRIVATE
 set_target_properties(mhp3rd_savedata_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 if(PSPRECOMP_BUILD_TESTS)
     add_test(NAME mhp3rd_savedata_tests COMMAND mhp3rd_savedata_tests)
+endif()
+
+# PGD containers with dummy keys: no console key and no game data.
+add_executable(mhp3rd_pgd_tests
+    tests/pgd_tests.cpp
+    host/crypto/keys_file.cpp
+    host/crypto/pgd.cpp
+    host/save_data/aes128.cpp
+    host/save_data/savedata_crypto.cpp
+    third_party/tiny_aes/aes.c)
+target_include_directories(mhp3rd_pgd_tests PRIVATE
+    "${MHP3RD_PROFILE_DIR}/host"
+    "${MHP3RD_PROFILE_DIR}/third_party")
+set_target_properties(mhp3rd_pgd_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(PSPRECOMP_BUILD_TESTS)
+    add_test(NAME mhp3rd_pgd_tests COMMAND mhp3rd_pgd_tests)
 endif()
 
 # Camera dispatch, ownership and integration checks without game data.
