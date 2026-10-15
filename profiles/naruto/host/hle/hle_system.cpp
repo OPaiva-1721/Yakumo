@@ -120,6 +120,14 @@ void register_process(HleRegistrar &hle) {
         log_once("module:" + name, "[module] loaded stock module " + name + " (HLE)");
         kernel().finish(ctx, uid);
     });
+    // The same stock modules loaded by path, often as raw disc sectors
+    // ("disc0:/sce_lbn0xE640_size0x5100"). The image is not read.
+    hle.add("ModuleMgrForUser", "sceKernelLoadModule", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::string path = read_cstring(rt.memory(), arg(ctx, 0), 256u);
+        const auto uid = static_cast<std::uint32_t>(kernel().allocate_uid());
+        log_once("module-path:" + path, "[module] loaded stock module " + path + " (HLE)");
+        kernel().finish(ctx, uid);
+    });
     for (const char *name : {"sceKernelStartModule", "sceKernelStopModule", "sceKernelUnloadModule"}) {
         hle.add("ModuleMgrForUser", name, [name](Runtime &, AllegrexContext &ctx) {
             log_once(std::string("module-op:") + name, std::string("[module] ") + name);

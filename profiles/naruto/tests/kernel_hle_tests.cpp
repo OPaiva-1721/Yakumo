@@ -1065,6 +1065,13 @@ void hosting_contracts() {
 }
 void system_contracts() {
     Fixture f;
+    f.string(Fixture::text, "disc0:/sce_lbn0xE640_size0x5100");
+    const auto first = f.call("ModuleMgrForUser", "sceKernelLoadModule", {Fixture::text, 0u, 0u});
+    const auto second = f.call("ModuleMgrForUser", "sceKernelLoadModule", {Fixture::text, 0u, 0u});
+    check(static_cast<int>(first) > 0 && static_cast<int>(second) > 0 && first != second,
+        "loading a stock module by path returns a fresh module id");
+    check(f.call("ModuleMgrForUser", "sceKernelStartModule", {first, 0u, 0u, 0u, 0u}) == first,
+        "a module loaded by path starts");
     for (const auto *name : {"sceKernelDcacheWritebackAll", "sceKernelDcacheWritebackInvalidateAll",
              "sceKernelDcacheInvalidateRange", "sceKernelDcacheWritebackRange", "sceKernelSetGPO",
              "sceKernelIcacheInvalidateAll", "sceKernelIcacheInvalidateRange"})
