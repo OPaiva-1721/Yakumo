@@ -3,6 +3,7 @@ package io.github.teamgdb.yakumo;
 import android.app.AlertDialog;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.database.Cursor;
@@ -259,6 +260,19 @@ public class YakumoActivity extends SDLActivity {
         return pick(intent);
     }
 
+    /**
+     * Asks the player for one or more files to read; their document URIs, one
+     * per line, or null when cancelled.
+     */
+    public static String pickDocuments() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return pick(intent);
+    }
+
     private static String pick(Intent intent) {
         if (mSingleton == null) return null;
         synchronized (sPickLock) {
@@ -295,6 +309,17 @@ public class YakumoActivity extends SDLActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == kPickTree) {
+            if (resultCode == RESULT_OK && data != null && data.getClipData() != null) {
+                // Several documents, from pickDocuments().
+                ClipData clip = data.getClipData();
+                StringBuilder uris = new StringBuilder();
+                for (int i = 0; i < clip.getItemCount(); ++i) {
+                    if (i > 0) uris.append('\n');
+                    uris.append(clip.getItemAt(i).getUri().toString());
+                }
+                finishPick(uris.toString());
+                return;
+            }
             Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
             finishPick(uri != null ? uri.toString() : null);
             return;

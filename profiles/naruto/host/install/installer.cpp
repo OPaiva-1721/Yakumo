@@ -3,6 +3,7 @@
 #include "app_paths.hpp"
 
 #include "install/executable_preparation.hpp"
+#include "psprecomp/common.hpp"
 #include "install/game_identity.hpp"
 #include "install/user_data.hpp"
 
@@ -230,11 +231,27 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
 
     const std::string stage = "Preparing the executable";
     progress(stage, 0u, 1u);
-    const std::vector<std::uint8_t> executable = prepare_executable(
-        inspection.eboot_bin, [&](std::uint64_t done, std::uint64_t total) { progress(stage, done, total); });
     const std::filesystem::path executable_path = data_dir / kExecutableFile;
     const std::filesystem::path executable_partial = data_dir / (std::string(kExecutableFile) + ".part");
-    write_file(executable_partial, executable);
+    // An executable the player supplied (dumped from the game) is kept when it
+    // is the right one: this disc's EBOOT.BIN uses a key setup does not carry.
+    std::error_code supplied_ec;
+    const bool supplied = std::filesystem::is_regular_file(executable_path, supplied_ec) &&
+        psprecomp::sha256_file(executable_path) == kExecutableSha256;
+    if (supplied) {
+        std::filesystem::copy_file(
+            executable_path, executable_partial, std::filesystem::copy_options::overwrite_existing);
+    } else {
+        std::vector<std::uint8_t> executable;
+        try {
+            executable = prepare_executable(
+                inspection.eboot_bin, [&](std::uint64_t done, std::uint64_t total) { progress(stage, done, total); });
+        } catch (const psprecomp::Error &) {
+            throw InstallError("This disc's EBOOT.BIN cannot be decrypted here. Choose the disc image together "
+                               "with the EBOOT.ELF that PPSSPP dumps from it (and keys.txt).");
+        }
+        write_file(executable_partial, executable);
+    }
 
     // Past this point the installation completes; a cancel would leave the
     // copy renamed without its executable.
@@ -327,6 +344,66 @@ std::filesystem::path copy_image_document(
     std::filesystem::rename(partial, target, ec);
     if (ec) throw InstallError("Could not keep the copy of the disc image: " + ec.message() + ".");
     return target;
+}
+#endif
+
+#if defined(MHP3RD_ANDROID_APP)
+namespace {
+// The keys file is a short text file; anything this small is not a disc.
+constexpr std::uint64_t kLargestKeysFile = 64u * 1024u;
+
+std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t limit) {
+    const int fd = android::open_document(uri, "r");
+    if (fd < 0) throw InstallError("Android would not let Yakumo read that file. Choose it again.");
+    std::vector<std::uint8_t> data;
+    std::vector<std::uint8_t> buffer(1u << 20);
+    for (;;) {
+        const ssize_t got = ::read(fd, buffer.data(), buffer.size());
+        if (got < 0 && errno == EINTR) continue;
+        if (got < 0) {
+            ::close(fd);
+            throw InstallError("Reading a chosen file failed. Choose it again.");
+        }
+        if (got == 0) break;
+        data.insert(data.end(), buffer.begin(), buffer.begin() + got);
+        if (data.size() > limit) {
+            ::close(fd);
+            throw InstallError("A chosen file is larger than expected.");
+        }
+    }
+    ::close(fd);
+    return data;
+}
+} // namespace
+
+DocumentKind classify_document(const std::string &uri) {
+    const int fd = android::open_document(uri, "r");
+    if (fd < 0) throw InstallError("Android would not let Yakumo read that file. Choose it again.");
+    struct stat info{};
+    const std::uint64_t size = ::fstat(fd, &info) == 0 ? static_cast<std::uint64_t>(info.st_size) : 0u;
+    std::array<unsigned char, 4> magic{};
+    const ssize_t got = ::read(fd, magic.data(), magic.size());
+    ::close(fd);
+    if (got == 4 && magic[0] == 0x7Fu && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F')
+        return DocumentKind::Executable;
+    if (size != 0u && size <= kLargestKeysFile) return DocumentKind::KeysFile;
+    return DocumentKind::DiscImage;
+}
+
+void import_document(const std::string &uri, DocumentKind kind, const std::filesystem::path &data_dir) {
+    std::error_code ec;
+    std::filesystem::create_directories(data_dir, ec);
+    if (kind == DocumentKind::Executable) {
+        const std::vector<std::uint8_t> executable = read_document(uri, 64u << 20);
+        if (psprecomp::sha256_bytes(executable) != kExecutableSha256)
+            throw InstallError("The chosen EBOOT.ELF is not the decrypted executable of " + std::string(kGameTitle) +
+                " (" + kDiscIdDisplay + ").");
+        write_file(data_dir / kExecutableFile, executable);
+        std::cout << "[setup] imported " << kExecutableFile << std::endl;
+    } else if (kind == DocumentKind::KeysFile) {
+        write_file(data_dir / "keys.txt", read_document(uri, kLargestKeysFile));
+        std::cout << "[setup] imported keys.txt" << std::endl;
+    }
 }
 #endif
 

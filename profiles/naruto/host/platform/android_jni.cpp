@@ -5,6 +5,7 @@
 
 #include <jni.h>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace mhp3rd::android {
@@ -107,6 +108,25 @@ std::optional<std::string> pick_document() {
     jobject result = call.env->CallStaticObjectMethod(call.type, id);
     if (call.failed()) return std::nullopt;
     return call.text(result);
+}
+
+std::optional<std::vector<std::string>> pick_documents() {
+    Call call;
+    if (!call.ok()) return std::nullopt;
+    jmethodID id = call.method("pickDocuments", "()Ljava/lang/String;");
+    if (id == nullptr) return std::nullopt;
+    jobject result = call.env->CallStaticObjectMethod(call.type, id);
+    if (call.failed()) return std::nullopt;
+    const std::optional<std::string> text = call.text(result);
+    if (!text) return std::nullopt;
+    std::vector<std::string> uris;
+    std::size_t start = 0;
+    while (start <= text->size()) {
+        const std::size_t end = std::min(text->find('\n', start), text->size());
+        if (end > start) uris.push_back(text->substr(start, end - start));
+        start = end + 1;
+    }
+    return uris;
 }
 
 std::string tree_root(const std::string &tree_uri) {

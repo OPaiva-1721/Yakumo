@@ -43,6 +43,41 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 sdk="${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
 build_tools="$(ls -d "$sdk"/build-tools/* | sort -V | tail -1)"
+
+# Build tools as the SDK ships them: d8 and apksigner are batch files on
+# Windows, which Git Bash cannot run directly.
+run_tool() {
+    local name="$1"
+    shift
+    if [[ -f "$build_tools/$name.bat" ]]; then
+        local args=() arg
+        for arg in "$@"; do
+            if [[ "$arg" == /* ]]; then args+=("$(cygpath -w "$arg")"); else args+=("$arg"); fi
+        done
+        cmd.exe //c "$(cygpath -w "$build_tools/$name.bat")" "${args[@]}"
+    else
+        "$build_tools/$name" "$@"
+    fi
+}
+
+# Adds files to a zip archive: `zip` where there is one, else Python's
+# zipfile (Git Bash on Windows has no zip). Paths are relative to $1.
+add_to_zip() {
+    local dir="$1" archive="$2"
+    shift 2
+    if command -v zip > /dev/null; then
+        (cd "$dir" && zip -q -r -9 "$archive" "$@")
+    else
+        (cd "$dir" && python3 -c '
+import os, sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "a", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    for item in sys.argv[2:]:
+        paths = [item] if os.path.isfile(item) else [os.path.join(r, f) for r, _, fs in os.walk(item) for f in fs]
+        for p in sorted(paths):
+            z.write(p, p.replace(os.sep, "/"))
+' "$archive" "$@")
+    fi
+}
 platform="$(ls -d "$sdk"/platforms/android-* | sort -V | tail -1)"
 android_jar="$platform/android.jar"
 work="$build_dir/apk"
@@ -50,11 +85,11 @@ rm -rf "$work"
 mkdir -p "$work/classes" "$work/dex" "$work/lib/arm64-v8a"
 
 echo "compiling SDL's Java activity and the app's own"
-javac -nowarn --release 11 -classpath "$android_jar" -d "$work/classes" \
+javac -nowarn -encoding UTF-8 --release 11 -classpath "$android_jar" -d "$work/classes" \
     $(find "$sdl_dir/android-project/app/src/main/java" "$here/java" -name '*.java') 2> "$work/javac.log"
 min_sdk=29
-"$build_tools/d8" --release --min-api "$min_sdk" --lib "$android_jar" --output "$work/dex" \
-    $(find "$work/classes" -name '*.class')
+(cd "$work/classes" && run_tool d8 --release --min-api "$min_sdk" --lib "$android_jar" --output ../dex \
+    $(find . -name '*.class'))
 
 echo "linking resources"
 # The licences of what the APK carries: the third-party notices, SDL's and
@@ -62,7 +97,10 @@ echo "linking resources"
 mkdir -p "$work/assets/licenses"
 cp "$here/../THIRD_PARTY_NOTICES.md" "$work/assets/licenses/"
 cp "$sdl_dir/LICENSE.txt" "$work/assets/licenses/SDL3-LICENSE.txt"
-cp "$build_dir"/bin/lib/FFmpeg-COPYING.LGPLv2.1.txt "$build_dir"/bin/lib/FFmpeg-SOURCE.txt "$work/assets/licenses/"
+# A build configured with MHP3RD_FFMPEG=OFF carries no FFmpeg.
+if [[ -f "$build_dir/bin/lib/libavcodec.so" ]]; then
+    cp "$build_dir"/bin/lib/FFmpeg-COPYING.LGPLv2.1.txt "$build_dir"/bin/lib/FFmpeg-SOURCE.txt "$work/assets/licenses/"
+fi
 if [[ -n "${FONT_DIR:-}" ]]; then
     mkdir -p "$work/assets/fonts"
     cp "$FONT_DIR/NotoSansCJKjp-Regular.otf" "$work/assets/fonts/"
@@ -100,15 +138,21 @@ echo "adding native libraries"
 lib="$work/lib/arm64-v8a"
 cp "$sdl_lib" "$lib/libSDL3.so"
 cp "$build_dir/bin/libmain.so" "$lib/"
-cp "$build_dir"/bin/lib/libavcodec.so "$build_dir"/bin/lib/libavutil.so "$lib/"
+if [[ -f "$build_dir/bin/lib/libavcodec.so" ]]; then
+    cp "$build_dir"/bin/lib/libavcodec.so "$build_dir"/bin/lib/libavutil.so "$lib/"
+fi
+# A title without code overlays has none to pack.
+shopt -s nullglob
 overlays=("$build_dir"/bin/overlays/libovl*.so)
+shopt -u nullglob
 if [[ -n "$overlay_limit" ]]; then overlays=("${overlays[@]:0:$overlay_limit}"); fi
-cp "${overlays[@]}" "$lib/"
-strip="$(ls -d "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip | head -1)"
+if ((${#overlays[@]} > 0)); then cp "${overlays[@]}" "$lib/"; fi
+strip="$(ls -d "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip* | head -1)"
 "$strip" --strip-unneeded "$lib"/*.so
 # extractNativeLibs is on, so the libraries may be compressed: the package
 # manager unpacks them at install time.
-(cd "$work" && cp dex/classes.dex . && zip -q unsigned.apk classes.dex && zip -q -r -9 unsigned.apk lib)
+cp "$work/dex/classes.dex" "$work/"
+add_to_zip "$work" unsigned.apk classes.dex lib
 
 echo "aligning and signing"
 keystore="${KEYSTORE:-$build_dir/apk-research.keystore}"
@@ -120,6 +164,6 @@ if [[ ! -f "$keystore" ]]; then
         -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Yakumo research build" > /dev/null 2>&1
 fi
 "$build_tools/zipalign" -f -P 16 4 "$work/unsigned.apk" "$work/aligned.apk"
-"$build_tools/apksigner" sign --ks "$keystore" --ks-pass "pass:$password" --key-pass "pass:$password" \
+run_tool apksigner sign --ks "$keystore" --ks-pass "pass:$password" --key-pass "pass:$password" \
     --ks-key-alias "$alias" --out "$output" "$work/aligned.apk"
 echo "wrote $output ($(du -h "$output" | cut -f1), ${#overlays[@]} overlay libraries, version $version_name ($version_code))"

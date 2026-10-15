@@ -111,7 +111,9 @@ bool SetupScreens::introduce(const fs::path &data_dir) {
                 install::kDiscIdDisplay + ", as an .iso file: the PlayStation 3 release carries it.");
             ImGui::Dummy({0.0f, font() * 0.4f});
 #if defined(MHP3RD_ANDROID_APP)
-            paragraph("Choose the image next, in Android's file picker. Yakumo copies it into its own storage (an "
+            paragraph("Next, in Android's file picker, select the image together with the EBOOT.ELF that PPSSPP "
+                      "dumps from it and your keys.txt (press and hold to select several). "
+                      "Yakumo copies the image into its own storage (an "
                       "app cannot keep reading a file elsewhere), checks that it is the right release and prepares "
                       "the game from it. The copy needs about 1.3 GB of free space, besides the 0.8 GB the app takes; "
                       "once it is made, the original can be deleted. Nothing is downloaded.",
@@ -134,7 +136,8 @@ bool SetupScreens::introduce(const fs::path &data_dir) {
             ImGui::Dummy({0.0f, font() * 0.4f});
             paragraph("You can also drop the .iso file onto this window.", colors::kTextDim);
 #endif
-            layer.set_description("Monster Hunter Portable 3rd HD Ver. (NPJB-40001) is the only release supported.");
+            layer.set_description(std::string(install::kGameTitle) + " (" + install::kDiscIdDisplay +
+                ") is the only release supported.");
             begin_footer();
             hints({{Control::Confirm, "Select"}, {Control::Back, "Quit"}});
             end_panel();
@@ -147,17 +150,28 @@ bool SetupScreens::introduce(const fs::path &data_dir) {
 #if defined(MHP3RD_ANDROID_APP)
 std::optional<fs::path> SetupScreens::choose_image() {
     for (;;) {
-        const std::optional<std::string> uri = android::pick_document();
-        if (!uri) return std::nullopt;
-        std::cout << "[setup] picked " << *uri << std::endl;
-        // The picked image is a content:// document, readable only through a
-        // file descriptor, so it is copied into the data folder, with
-        // progress, before it is checked. It cannot be used where it is.
+        // The player may pick the disc image alone, or with the EBOOT.ELF and
+        // keys.txt this release needs; each is told apart by its contents.
+        const std::optional<std::vector<std::string>> uris = android::pick_documents();
+        if (!uris || uris->empty()) return std::nullopt;
         try {
+            std::optional<std::string> image;
+            for (const std::string &uri : *uris) {
+                std::cout << "[setup] picked " << uri << std::endl;
+                const install::DocumentKind kind = install::classify_document(uri);
+                if (kind == install::DocumentKind::DiscImage)
+                    image = uri;
+                else
+                    install::import_document(uri, kind, data_dir_);
+            }
+            if (!image) throw install::InstallError("Choose the disc image too, the .iso file of the game.");
+            // The picked image is a content:// document, readable only through
+            // a file descriptor, so it is copied into the data folder, with
+            // progress, before it is checked. It cannot be used where it is.
             fs::path copied;
             run_task("Copying the disc image", [&] {
                 copied = install::copy_image_document(
-                    *uri, data_dir_, [this](const std::string &stage, std::uint64_t done, std::uint64_t total) {
+                    *image, data_dir_, [this](const std::string &stage, std::uint64_t done, std::uint64_t total) {
                         progress(stage, done, total);
                     });
             });

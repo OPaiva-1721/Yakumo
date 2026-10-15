@@ -33,6 +33,9 @@ void relaunch();
 [[nodiscard]] std::optional<std::string> pick_folder();
 // A file the player picks to read, as a document URI; nothing when cancelled.
 [[nodiscard]] std::optional<std::string> pick_document();
+// Files the player picks to read, several at once if they like, as document
+// URIs; nothing when cancelled.
+[[nodiscard]] std::optional<std::vector<std::string>> pick_documents();
 // The document standing for a picked tree's folder itself.
 [[nodiscard]] std::string tree_root(const std::string &tree_uri);
 // The provider's display name, which need not be its opaque document id.

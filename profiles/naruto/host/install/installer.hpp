@@ -70,6 +70,14 @@ void install(const std::filesystem::path &image, ImageStorage storage, const std
 // progress; a partial copy is removed.
 std::filesystem::path copy_image_document(
     const std::string &uri, const std::filesystem::path &data_dir, const ProgressFn &progress);
+
+// What a picked document holds, judged from its size and first bytes.
+enum class DocumentKind { DiscImage, Executable, KeysFile };
+[[nodiscard]] DocumentKind classify_document(const std::string &uri);
+// Copies the player's decrypted executable (an EBOOT.ELF dumped from the
+// game, checked against kExecutableSha256) or keys file (keys.txt, which
+// PGD-encrypted game data needs) into data_dir. Throws InstallError.
+void import_document(const std::string &uri, DocumentKind kind, const std::filesystem::path &data_dir);
 #endif
 
 class InstallerUi {
