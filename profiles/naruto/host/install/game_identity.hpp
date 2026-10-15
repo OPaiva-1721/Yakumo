@@ -1,21 +1,23 @@
 #pragma once
 
-// Identity of the one release this profile supports. The hashes match
-// config/mhp3rd_npjb40001.toml and the profile README.
+// Identity of the one release this profile supports: the European UMD of
+// Naruto Shippuden: Ultimate Ninja Impact, disc version 1.01.
 namespace mhp3rd::install {
 
 // DISC_ID in PSP_GAME/PARAM.SFO.
-inline constexpr const char *kDiscId = "NPJB40001";
-inline constexpr const char *kDiscIdDisplay = "NPJB-40001";
-inline constexpr const char *kGameTitle = "Monster Hunter Portable 3rd HD Ver.";
+inline constexpr const char *kDiscId = "ULES01537";
+inline constexpr const char *kDiscIdDisplay = "ULES-01537";
+inline constexpr const char *kGameTitle = "Naruto Shippuden: Ultimate Ninja Impact";
 
 inline constexpr const char *kExecutablePathOnDisc = "PSP_GAME/SYSDIR/EBOOT.BIN";
 inline constexpr const char *kParamSfoPathOnDisc = "PSP_GAME/PARAM.SFO";
 
 // SHA-256 of PSP_GAME/SYSDIR/EBOOT.BIN as it is on the disc.
 inline constexpr const char *kEncryptedExecutableSha256 =
-    "79e25f3512d56e0f7bf5c48351d7d0d255269675ffc8811ac5599322bb66945e";
-// SHA-256 of the executable the recompiled code was generated from.
-inline constexpr const char *kExecutableSha256 = "55c0598436c0753b04331f8e95d406f832d9217806e3a896fed0e88b33637d8c";
+    "6f1b38f6ee9593ffc1f6db3b45417318048783c655f5c9b7bb33ef07e3e1414b";
+// SHA-256 of the decrypted executable the recompiled code was generated from
+// (PPSSPP's "dump decrypted EBOOT.BIN" output; the built-in installer cannot
+// decrypt this title's tag yet).
+inline constexpr const char *kExecutableSha256 = "8edc4c36331eeb1b2ee1d796ac2b3d77fbfdc87f570cae8b121a8cec449f5ede";
 
 } // namespace mhp3rd::install

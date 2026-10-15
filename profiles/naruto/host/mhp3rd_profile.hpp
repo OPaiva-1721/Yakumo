@@ -10,7 +10,7 @@
 namespace mhp3rd {
 
 inline constexpr std::uint32_t kLoadBase = psprecomp::kDefaultPspUserLoadBase;
-inline constexpr std::uint32_t kGuestRamBytes = 64u * 1024u * 1024u;
+inline constexpr std::uint32_t kGuestRamBytes = 32u * 1024u * 1024u;
 
 struct ProfilePaths {
     std::filesystem::path disc_image;   // UMD ISO; empty disables disc0:

@@ -4,12 +4,12 @@
 #   generate.sh [build_dir]
 #
 # Requires a framework build (psp_analyze/psp_recomp) in build_dir, default
-# out/mhp3rd. Output: profiles/mhp3rd/analysis and profiles/mhp3rd/generated.
+# out/naruto. Output: profiles/naruto/analysis and profiles/naruto/generated.
 set -euo pipefail
 
 profile_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_dir="$(cd "$profile_dir/../.." && pwd)"
-build_dir="${1:-$repo_dir/out/mhp3rd}"
+build_dir="${1:-$repo_dir/out/naruto}"
 elf="$profile_dir/game/EBOOT.ELF"
 
 if [[ ! -f "$elf" ]]; then
@@ -23,4 +23,4 @@ mkdir -p "$profile_dir/analysis"
 # Regenerate in place: psp_recomp rewrites only units whose text changed and
 # removes units that no longer exist, so unchanged units keep their timestamps
 # and are not recompiled.
-"$build_dir/psp_recomp" "$elf" --auto "$profile_dir/generated" --dispatch-target 0x088E8B18
+"$build_dir/psp_recomp" "$elf" --auto "$profile_dir/generated"

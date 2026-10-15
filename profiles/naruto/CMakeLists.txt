@@ -36,12 +36,12 @@ if(MHP3RD_GENERATED)
             break()
         endif()
     endforeach()
-    if(NOT MHP3RD_CAMERA_HELPER_UNIT)
-        message(FATAL_ERROR "mhp3rd: no generated unit registers the camera rotation helper 0x08878B70; "
-                            "regenerate the corpus from the supported executable, or update "
-                            "host/camera/game_camera.cpp if the helper has moved")
+    if(MHP3RD_CAMERA_HELPER_UNIT)
+        message(STATUS "naruto: MHP3rd camera helper address 0x08878B70 found in ${MHP3RD_CAMERA_HELPER_UNIT}; "
+                       "its code signature check keeps the hook off for this game")
+    else()
+        message(STATUS "naruto: no MHP3rd camera helper in the corpus (expected)")
     endif()
-    message(STATUS "mhp3rd: camera rotation helper in ${MHP3RD_CAMERA_HELPER_UNIT}")
 
     # Hiding the HUD (host/gpu/game_hud.cpp) wraps the game's 2D functions the
     # same way, so their units are read from the corpus too, in one pass.

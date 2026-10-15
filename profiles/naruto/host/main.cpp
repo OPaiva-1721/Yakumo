@@ -465,7 +465,7 @@ int main(int argc, char **argv) {
 
         const psprecomp::Elf32Image elf = psprecomp::Elf32Image::from_file(executable);
         if (elf.required_ram_size(mhp3rd::kLoadBase) != mhp3rd::kGuestRamBytes)
-            throw psprecomp::Error("Executable does not match the 64 MiB MHP3rd HD layout");
+            throw psprecomp::Error("Executable does not match the 32 MiB Naruto Ultimate Ninja Impact layout");
 
         psprecomp::Runtime runtime(mhp3rd::kGuestRamBytes);
         for (const EmbeddedNid &entry : kEmbeddedNids) runtime.nids().add(entry.library, entry.nid, entry.name);
