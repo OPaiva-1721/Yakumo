@@ -160,6 +160,28 @@ int main() {
                   checked.problems()[0].find("kirk.aes.39") != std::string::npos,
               "a key that does not match its fingerprint is refused and named");
     }
+    // Text pasted as-is from a key table: a key anywhere in a line, in any of
+    // the usual spellings, is recognised by its fingerprint and named.
+    {
+        const mhp3rd::pgd::Fingerprints expected{{"kirk.aes.38", mhp3rd::pgd::fingerprint(dummy(1))},
+                                                  {"kirk.aes.63", mhp3rd::pgd::fingerprint(dummy(4))},
+                                                  {"amctrl.1cd4", mhp3rd::pgd::fingerprint(dummy(5))}};
+        const auto pasted = mhp3rd::pgd::KeysFile::parse(
+            "PSP Kirk commands 4/7 AES128CBC Keys\n"
+            "Seed  Key   Notes\n"
+            "0x38\t20272E353C434A51585F666D747B8289\tused by the DRM library\n"
+            "0x63  0x7D, 0x84, 0x8B, 0x92, 0x99, 0xA0, 0xA7, 0xAE, 0xB5, 0xBC, 0xC3, 0xCA, 0xD1, 0xD8, 0xDF, 0xE6\n"
+            "AMCTRL key at 0x1CD4: 9c a3 aa b1 b8 bf c6 cd d4 db e2 e9 f0 f7 fe 05\n"
+            "0x40  00112233445566778899aabbccddeeff  not a key anyone asked for\n",
+            expected);
+        check(pasted.find("kirk.aes.38") != nullptr && *pasted.find("kirk.aes.38") == dummy(1),
+              "a key in a pasted table row is found by its fingerprint");
+        check(pasted.find("kirk.aes.63") != nullptr && *pasted.find("kirk.aes.63") == dummy(4),
+              "a key written as 0x.. bytes with commas is found");
+        check(pasted.find("amctrl.1cd4") != nullptr && *pasted.find("amctrl.1cd4") == dummy(5),
+              "a key written as spaced bytes after a label is found");
+        check(pasted.count() == 3u && pasted.problems().empty(), "other values in the pasted text are ignored");
+    }
     check(mhp3rd::pgd::console_fingerprints().size() == 6u &&
               mhp3rd::pgd::console_fingerprints().count("amctrl.1cf4") == 1u,
           "the console fingerprints cover the six PGD keys");

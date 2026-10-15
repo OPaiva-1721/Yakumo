@@ -82,6 +82,34 @@ std::string fingerprint(const Key16 &key) {
     return psprecomp::sha256_bytes(std::vector<std::uint8_t>(key.begin(), key.end()));
 }
 
+namespace {
+
+// A line pasted from a key table, in whatever spelling ("0x7D, 0x84, ...",
+// "7d 84 ...", a label in front): every run of 32 hex digits it contains,
+// once separators and 0x prefixes are dropped, is compared with the expected
+// fingerprints. Returns the names found, with their keys.
+std::vector<std::pair<std::string, Key16>> recognise_keys(std::string_view line, const Fingerprints &expected) {
+    std::string digits;
+    for (std::size_t i = 0; i < line.size(); ++i) {
+        if (line[i] == '0' && i + 1 < line.size() && (line[i + 1] == 'x' || line[i + 1] == 'X')) {
+            ++i;
+            continue;
+        }
+        if (std::isxdigit(static_cast<unsigned char>(line[i]))) digits.push_back(line[i]);
+    }
+    std::vector<std::pair<std::string, Key16>> found;
+    for (std::size_t start = 0; start + 32u <= digits.size(); ++start) {
+        const auto key = parse_key(std::string_view(digits).substr(start, 32u));
+        if (!key) continue;
+        const std::string sha256 = fingerprint(*key);
+        for (const auto &[name, wanted] : expected)
+            if (wanted == sha256) found.emplace_back(name, *key);
+    }
+    return found;
+}
+
+} // namespace
+
 KeysFile KeysFile::parse(std::string_view text, const Fingerprints &expected) {
     KeysFile file;
     file.found_ = true;
@@ -90,7 +118,11 @@ KeysFile KeysFile::parse(std::string_view text, const Fingerprints &expected) {
     while (std::getline(in, line)) {
         if (const auto hash = line.find('#'); hash != std::string::npos) line.erase(hash);
         const auto equals = line.find('=');
-        if (equals == std::string::npos) continue;
+        if (equals == std::string::npos) {
+            for (auto &[name, key] : recognise_keys(line, expected))
+                if (file.keys_.count(name) == 0u) file.keys_[name] = key;
+            continue;
+        }
         const std::string name = lower(trim(std::string_view(line).substr(0, equals)));
         const auto key = parse_key(trim(std::string_view(line).substr(equals + 1)));
         if (!key) {
