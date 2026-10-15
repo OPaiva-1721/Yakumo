@@ -211,15 +211,24 @@ void register_platform(HleRegistrar &hle) {
             value = 0u;
             break; // 24-hour clock
         case 8u:
-            value = 0u;
-            break; // language: Japanese
+            value = 1u;
+            break; // language: English (the European release has no Japanese text)
         case 9u:
-            value = 0u;
-            break; // confirm button: circle
+            value = 1u;
+            break; // confirm button: cross, as on European consoles
         default:
             break;
         }
         rt.memory().store32(arg(ctx, 1), value);
+        kernel().finish(ctx, 0u);
+    });
+    hle.add("sceUtility", "sceUtilityGetSystemParamString", [](Runtime &rt, AllegrexContext &ctx) {
+        constexpr std::uint32_t kInvalidSystemParamId = 0x80110103u;
+        if (arg(ctx, 0) != 1u) { // only the nickname is a string
+            kernel().finish(ctx, kInvalidSystemParamId);
+            return;
+        }
+        write_cstring(rt.memory(), arg(ctx, 1), "Player", arg(ctx, 2));
         kernel().finish(ctx, 0u);
     });
     hle.add("sceUtility", "sceUtilityLoadModule", success);

@@ -1193,10 +1193,18 @@ void system_contracts() {
     for (unsigned i = 0; i < 16; ++i)
         check(
             f.runtime.memory().load8(Fixture::output + i) == 0x10 + i, "synthetic identifier bytes are deterministic");
+    // A European console: English (1) and cross to confirm (1).
     for (auto parameter : {2u, 4u, 5u, 8u, 9u, 99u})
         check(f.call("sceUtility", "sceUtilityGetSystemParamInt", {parameter, Fixture::output}) == 0 &&
-                f.runtime.memory().load32(Fixture::output) == (parameter == 2 ? 1u : 0u),
+                f.runtime.memory().load32(Fixture::output) == (parameter == 2 || parameter == 8 || parameter == 9 ? 1u : 0u),
             "system preferences return supported defaults");
+    check(f.call("sceUtility", "sceUtilityGetSystemParamString", {1u, Fixture::output, 0x80u}) == 0 &&
+            mhp3rd::read_cstring(f.runtime.memory(), Fixture::output) == "Player",
+        "the nickname system parameter is a fixed name");
+    f.runtime.memory().store8(Fixture::output, 0x5Au);
+    check(f.call("sceUtility", "sceUtilityGetSystemParamString", {99u, Fixture::output, 0x80u}) == 0x80110103u &&
+            f.runtime.memory().load8(Fixture::output) == 0x5Au,
+        "unknown string parameters are rejected without writing");
     check(f.call("sceUtility", "sceUtilityLoadModule") == 0 && f.call("sceUtility", "sceUtilityUnloadModule") == 0,
         "utility module loading acknowledged");
     f.call("LoadExecForUser", "sceKernelExitGame");
