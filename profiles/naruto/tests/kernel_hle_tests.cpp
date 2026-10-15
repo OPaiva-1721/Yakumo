@@ -608,6 +608,8 @@ void io_contracts() {
     Fixture f;
     PublicFiles files;
     {
+        // Dummy keys cannot match the console's fingerprints.
+        mhp3rd::pgd::set_host_keys_fingerprints({});
         std::ofstream(files.root / "keys.txt") << kDummyKeysText;
         const auto keys = mhp3rd::pgd::KeysFile::parse(kDummyKeysText);
         files.extra = mhp3rd::pgd::PgdFile::build(

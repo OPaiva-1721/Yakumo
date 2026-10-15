@@ -145,6 +145,25 @@ int main() {
     }
     check(!mhp3rd::pgd::KeysFile::load("no-such-keys-file.txt").found(), "a missing keys file is reported as absent");
 
+    // Fingerprints: a key whose SHA-256 differs from the expected one is
+    // refused and named; the rest load.
+    {
+        const mhp3rd::pgd::Fingerprints expected{
+            {"kirk.aes.38", mhp3rd::pgd::fingerprint(dummy(1))}, {"kirk.aes.39", mhp3rd::pgd::fingerprint(dummy(99))}};
+        const auto checked = mhp3rd::pgd::KeysFile::parse("kirk.aes.38 = 20272e353c434a51585f666d747b8289\n"
+                                                          "kirk.aes.39 = 3f464d545b626970777e858c939aa1a8\n"
+                                                          "kirk.aes.63 = 7d848b9299a0a7aeb5bcc3cad1d8dfe6\n",
+            expected);
+        check(checked.find("kirk.aes.38") != nullptr && checked.find("kirk.aes.63") != nullptr,
+              "keys that match their fingerprint, or have none, load");
+        check(checked.find("kirk.aes.39") == nullptr && checked.problems().size() == 1u &&
+                  checked.problems()[0].find("kirk.aes.39") != std::string::npos,
+              "a key that does not match its fingerprint is refused and named");
+    }
+    check(mhp3rd::pgd::console_fingerprints().size() == 6u &&
+              mhp3rd::pgd::console_fingerprints().count("amctrl.1cf4") == 1u,
+          "the console fingerprints cover the six PGD keys");
+
     if (g_failures != 0) std::printf("%d failed\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -447,10 +447,12 @@ add_executable(mhp3rd_pgd_tests
     host/crypto/pgd.cpp
     host/save_data/aes128.cpp
     host/save_data/savedata_crypto.cpp
+    "${PROJECT_SOURCE_DIR}/src/sha256.cpp"
     third_party/tiny_aes/aes.c)
 target_include_directories(mhp3rd_pgd_tests PRIVATE
     "${MHP3RD_PROFILE_DIR}/host"
-    "${MHP3RD_PROFILE_DIR}/third_party")
+    "${MHP3RD_PROFILE_DIR}/third_party"
+    "${PROJECT_SOURCE_DIR}/include")
 set_target_properties(mhp3rd_pgd_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 if(PSPRECOMP_BUILD_TESTS)
     add_test(NAME mhp3rd_pgd_tests COMMAND mhp3rd_pgd_tests)
