@@ -1515,6 +1515,27 @@ void utility_and_savedata_contracts() {
     f.string(data, "public save!");
     check(request(5) == 0 && mhp3rd::read_cstring(memory, params + 0x4c) == "SLOT1",
         "list save chooses first provided slot");
+    {
+        // LIST (11): the game's saves whose names match the pattern, into the
+        // SceUtilitySavedataIdListInfo at idList (0x5F4); entries are 72 bytes.
+        const unsigned list = aux + 0x500, entries = aux + 0x600;
+        memory.store32(params + 0x5f4, list);
+        memory.store32(list, 4);
+        memory.store32(list + 4, 0xffffffffu);
+        memory.store32(list + 8, entries);
+        f.string(params + 0x4c, "*");
+        check(request(11) == 0 && memory.load32(list + 4) == 1 &&
+                mhp3rd::read_cstring(memory, entries + 52) == "SLOT1" && (memory.load32(entries) & 0x1000u) != 0u,
+            "list returns each existing save of the game as a directory entry");
+        f.string(params + 0x3c, "NOGAME000");
+        check(request(11) == 0 && memory.load32(list + 4) == 0, "list of a game without saves is empty");
+        memory.store32(list, 0);
+        f.string(params + 0x3c, "PUB000001");
+        check(request(11) == 0 && memory.load32(list + 4) == 0, "list fills no more entries than maxCount");
+        memory.store32(params + 0x5f4, 0);
+        check(request(11) == 0x80110308u, "list without an idList is a parameter error");
+        f.string(params + 0x4c, "SLOT1");
+    }
     memory.store32(params + 0x60, 0);
     for (auto mode : {7u, 9u, 10u}) {
         check(request(3) == 0 && request(mode) == 0 && request(mode) == 0x80110347u,

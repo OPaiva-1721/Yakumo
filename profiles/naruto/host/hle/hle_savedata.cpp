@@ -59,7 +59,19 @@ constexpr std::uint32_t kUtilityData = 0x5D8u;
 constexpr std::uint32_t kKey = 0x5DCu; // char[16], firmware 2.00 and later
 constexpr std::uint32_t kSecureVersion = 0x5ECu;
 constexpr std::uint32_t kMinimumSizeWithKey = 0x5ECu;
+constexpr std::uint32_t kIdList = 0x5F4u; // SceUtilitySavedataIdListInfo *
 } // namespace param
+
+// SceUtilitySavedataIdListInfo {maxCount, resultCount, entries} and its
+// 72-byte entries {st_mode, ctime, atime, mtime (16 bytes each), name[20]}.
+namespace id_list {
+constexpr std::uint32_t kMaxCount = 0u;
+constexpr std::uint32_t kResultCount = 4u;
+constexpr std::uint32_t kEntries = 8u;
+constexpr std::uint32_t kEntrySize = 72u;
+constexpr std::uint32_t kEntryName = 52u;
+constexpr std::uint32_t kDirectoryMode = 0x11FFu;
+} // namespace id_list
 
 enum Mode : std::uint32_t {
     kAutoLoad = 0,
@@ -73,6 +85,7 @@ enum Mode : std::uint32_t {
     kSizes = 8,
     kAutoDelete = 9,
     kSingleDelete = 10,
+    kList = 11,
 };
 
 const char *mode_name(std::uint32_t mode) {
@@ -321,6 +334,50 @@ std::uint32_t do_sizes(psprecomp::GuestMemory &memory, std::uint32_t params) {
     return outcome;
 }
 
+// A save name against a LIST pattern, where '*' matches any run of characters.
+bool matches_pattern(std::string_view name, std::string_view pattern) {
+    if (pattern.empty()) return name.empty();
+    if (pattern.front() == '*')
+        return matches_pattern(name, pattern.substr(1)) || (!name.empty() && matches_pattern(name.substr(1), pattern));
+    return !name.empty() && name.front() == pattern.front() && matches_pattern(name.substr(1), pattern.substr(1));
+}
+
+// LIST: the game's save folders whose save names match the pattern in the
+// save name field, written to the id list up to its maxCount, without a UI.
+std::uint32_t do_list(psprecomp::GuestMemory &memory, std::uint32_t params) {
+    const std::uint32_t list = memory.load32(params + param::kIdList);
+    const std::string game = read_cstring(memory, params + param::kGameName, 13u);
+    if (list == 0u || game.empty()) return result::kLoadParam;
+    const std::string pattern = read_cstring(memory, params + param::kSaveName, 20u);
+    const auto max_count = static_cast<std::int32_t>(memory.load32(list + id_list::kMaxCount));
+    const std::uint32_t entries = memory.load32(list + id_list::kEntries);
+
+    std::vector<std::string> names;
+    std::error_code ec;
+    const std::filesystem::path root = state().memory_stick / "PSP" / "SAVEDATA";
+    for (const auto &folder : std::filesystem::directory_iterator(root, ec)) {
+        if (!folder.is_directory(ec)) continue;
+        const std::string name = path_to_utf8(folder.path().filename());
+        if (name.size() < game.size() || name.compare(0, game.size(), game) != 0) continue;
+        const std::string save = name.substr(game.size());
+        if (matches_pattern(save, pattern.empty() ? "*" : pattern)) names.push_back(save);
+    }
+    std::sort(names.begin(), names.end());
+
+    std::uint32_t count = 0u;
+    for (const std::string &save : names) {
+        if (static_cast<std::int32_t>(count) >= max_count || entries == 0u) break;
+        const std::uint32_t entry = entries + count * id_list::kEntrySize;
+        for (std::uint32_t i = 0; i < id_list::kEntrySize; i += 4u) memory.store32(entry + i, 0u);
+        memory.store32(entry, id_list::kDirectoryMode);
+        write_cstring(memory, entry + id_list::kEntryName, save, 20u);
+        ++count;
+    }
+    memory.store32(list + id_list::kResultCount, count);
+    std::cerr << "[savedata] listed " << count << " of " << names.size() << " saves of " << game << "\n";
+    return result::kOk;
+}
+
 // Picks the save a list dialog would land on when the player just confirms:
 // for loading and deleting the first listed save that exists, for saving the
 // first listed name.
@@ -366,6 +423,8 @@ std::uint32_t run_request(psprecomp::GuestMemory &memory, std::uint32_t params) 
         return do_delete(memory, params, save_name);
     case kSizes:
         return do_sizes(memory, params);
+    case kList:
+        return do_list(memory, params);
     default:
         // Not used by this game. Report a parameter error so the guest takes
         // its failure path instead of reading results that were never written.
