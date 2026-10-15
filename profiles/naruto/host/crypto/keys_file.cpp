@@ -115,26 +115,31 @@ KeysFile KeysFile::parse(std::string_view text, const Fingerprints &expected) {
     file.found_ = true;
     std::istringstream in{std::string(text)};
     std::string line;
+    // Problems with a named line, reported only if the key is not found
+    // anywhere else in the file.
+    std::map<std::string, std::string> named_problems;
     while (std::getline(in, line)) {
         if (const auto hash = line.find('#'); hash != std::string::npos) line.erase(hash);
-        const auto equals = line.find('=');
-        if (equals == std::string::npos) {
-            for (auto &[name, key] : recognise_keys(line, expected))
-                if (file.keys_.count(name) == 0u) file.keys_[name] = key;
-            continue;
+        // "name = 32 hex digits" names its key directly.
+        if (const auto equals = line.find('='); equals != std::string::npos) {
+            const std::string name = lower(trim(std::string_view(line).substr(0, equals)));
+            const auto key = parse_key(trim(std::string_view(line).substr(equals + 1)));
+            const auto wanted = expected.find(name);
+            if (key && (wanted == expected.end() || fingerprint(*key) == wanted->second)) {
+                file.keys_[name] = *key;
+                continue;
+            }
+            if (wanted != expected.end())
+                named_problems.emplace(name, key ? name + " is not the right key: its fingerprint does not match"
+                                                 : name + " is not 32 hex digits");
         }
-        const std::string name = lower(trim(std::string_view(line).substr(0, equals)));
-        const auto key = parse_key(trim(std::string_view(line).substr(equals + 1)));
-        if (!key) {
-            if (expected.count(name) != 0u) file.problems_.push_back(name + " is not 32 hex digits");
-            continue;
-        }
-        if (const auto wanted = expected.find(name); wanted != expected.end() && fingerprint(*key) != wanted->second) {
-            file.problems_.push_back(name + " is not the right key: its fingerprint does not match");
-            continue;
-        }
-        file.keys_[name] = *key;
+        // Anything else, pasted source code and tables included: keys are
+        // recognised by their fingerprints.
+        for (auto &[name, key] : recognise_keys(line, expected))
+            if (file.keys_.count(name) == 0u) file.keys_[name] = key;
     }
+    for (auto &[name, problem] : named_problems)
+        if (file.keys_.count(name) == 0u) file.problems_.push_back(std::move(problem));
     return file;
 }
 

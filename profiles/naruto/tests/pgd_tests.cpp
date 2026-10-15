@@ -182,6 +182,22 @@ int main() {
               "a key written as spaced bytes after a label is found");
         check(pasted.count() == 3u && pasted.problems().empty(), "other values in the pasted text are ignored");
     }
+    // Source code pasted from a key list has '=' too, and an empty "name ="
+    // line left above it is not a problem once the key is found.
+    {
+        const mhp3rd::pgd::Fingerprints expected{{"amctrl.1cd4", mhp3rd::pgd::fingerprint(dummy(5))},
+                                                  {"amctrl.1ce4", mhp3rd::pgd::fingerprint(dummy(6))}};
+        const auto pasted = mhp3rd::pgd::KeysFile::parse(
+            "amctrl.1CD4 = \n"
+            "amctrl.1CE4 =\n"
+            "private byte[] PSPAMHashKey3 = new byte[16] { 0x9C, 0xA3, 0xAA, 0xB1, 0xB8, 0xBF, 0xC6, 0xCD, 0xD4, "
+            "0xDB, 0xE2, 0xE9, 0xF0, 0xF7, 0xFE, 0x05 };\n",
+            expected);
+        check(pasted.find("amctrl.1cd4") != nullptr && *pasted.find("amctrl.1cd4") == dummy(5),
+              "a key in pasted source code with '=' is found by its fingerprint");
+        check(pasted.problems().size() == 1u && pasted.problems()[0].find("amctrl.1ce4") != std::string::npos,
+              "an empty line counts as a problem only when its key was not found elsewhere");
+    }
     check(mhp3rd::pgd::console_fingerprints().size() == 6u &&
               mhp3rd::pgd::console_fingerprints().count("amctrl.1cf4") == 1u,
           "the console fingerprints cover the six PGD keys");
