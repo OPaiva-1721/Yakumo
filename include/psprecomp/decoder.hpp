@@ -136,6 +136,7 @@ enum class OpcodeKind {
     Vidt,
     Vcst,
     Vocp,
+    Vrnd, // vrnds, vrndi, vrndf1, vrndf2: the VFPU's random number generator
     VfpuHorizontal,
     Vrot,
     Vtfm,

@@ -11,7 +11,21 @@
 #include <unordered_map>
 #include <vector>
 
+// The VFPU random number generator's state (VRNDS seeds it, VRNDI and VRNDF1/2
+// draw from it), shared by every generated unit; tools/codegen_main.cpp
+// declares it at block scope where it lowers those instructions. Compilers
+// disagree on the namespace such a declaration names (the enclosing one per the
+// standard and clang, the global one for MSVC), so both exist and share a state.
+std::uint32_t &psprecomp_vfpu_rng_state() {
+    static std::uint32_t state = 0x2545F491u;
+    return state;
+}
+
 namespace psprecomp {
+
+std::uint32_t &psprecomp_vfpu_rng_state() {
+    return ::psprecomp_vfpu_rng_state();
+}
 
 // See Runtime::invoke_chained_direct(). Diagnostics deliberately make this
 // sticky: once instrumentation has been requested, correctness matters more

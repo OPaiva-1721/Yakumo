@@ -742,6 +742,38 @@ std::string emit_regular(const psprecomp::DecodedInstruction &d, std::uint32_t p
         out << "    ctx.execute_vfpu_vocp(" << destination << "u, " << source << "u, " << length << "u);\n";
         break;
     }
+    case psprecomp::OpcodeKind::Vrnd: {
+        // The VFPU's random number generator. Its hardware algorithm is not
+        // documented; games need plausible random values, so one xorshift32
+        // state, defined in src/runtime.cpp, is shared by every generated unit.
+        // It is declared at the use so that units without VRND keep their text.
+        const std::uint32_t operation = (d.word >> 16u) & 3u;
+        const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
+        const std::uint32_t length = size_code + 1u;
+        const std::uint32_t destination = d.word & 0x7Fu;
+        const std::uint32_t source = (d.word >> 8u) & 0x7Fu;
+        out << "    { std::uint32_t &psprecomp_vfpu_rng_state();\n"
+            << "      auto &vfpu_rng = psprecomp_vfpu_rng_state();\n"
+            << "      const auto vfpu_next = [&vfpu_rng]() { vfpu_rng ^= vfpu_rng << 13u; vfpu_rng ^= vfpu_rng >> 17u;"
+               " vfpu_rng ^= vfpu_rng << 5u; return vfpu_rng; };\n";
+        if (operation == 0u) {
+            out << "      float vfpu_s[4]{}; ctx.read_vfpu_vector(vfpu_s, " << source << "u, 1u);\n"
+                << "      vfpu_rng = std::bit_cast<std::uint32_t>(vfpu_s[0]);\n"
+                << "      if (vfpu_rng == 0u) vfpu_rng = 0x2545F491u; }\n";
+        } else {
+            out << "      float vfpu_d[4]{};\n"
+                << "      for (std::uint32_t vfpu_i = 0; vfpu_i < " << length << "u; ++vfpu_i) {\n";
+            if (operation == 1u)
+                out << "        vfpu_d[vfpu_i] = std::bit_cast<float>(vfpu_next());\n";
+            else
+                out << "        vfpu_d[vfpu_i] = std::bit_cast<float>(0x3F800000u | (vfpu_next() >> 9u)) * "
+                    << (operation == 2u ? "1.0f" : "2.0f") << ";\n";
+            out << "      }\n"
+                << "      ctx.write_vfpu_vector_with_destination_prefix(vfpu_d, " << destination << "u, " << length
+                << "u); }\n";
+        }
+        break;
+    }
     case psprecomp::OpcodeKind::Vsgn: {
         const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
         const std::uint32_t length = size_code + 1u;

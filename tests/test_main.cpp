@@ -1180,6 +1180,15 @@ int main() {
         require(psprecomp::decode_allegrex(0xA8C80003u).kind == psprecomp::OpcodeKind::Swl, "SWL decode failed");
         require(psprecomp::decode_allegrex(0xB8C80000u).kind == psprecomp::OpcodeKind::Swr, "SWR decode failed");
         require(psprecomp::decode_allegrex(0x7CA8FE04u).kind == psprecomp::OpcodeKind::Ins, "INS decode failed");
+        // VFPU4 group 1, operations 0-3: the random number generator.
+        {
+            const char *names[4]{"vrnds", "vrndi", "vrndf1", "vrndf2"};
+            for (std::uint32_t operation = 0; operation < 4u; ++operation) {
+                const auto vrnd = psprecomp::decode_allegrex(0xD0200000u | (operation << 16u));
+                require(vrnd.kind == psprecomp::OpcodeKind::Vrnd && vrnd.mnemonic == names[operation],
+                    "VRND decode failed");
+            }
+        }
         require(psprecomp::decode_allegrex(0x7CA83A00u).kind == psprecomp::OpcodeKind::Ext, "EXT decode failed");
         require(psprecomp::decode_allegrex(0x0000000Fu).kind == psprecomp::OpcodeKind::Sync, "SYNC decode failed");
         const auto vflush = psprecomp::decode_allegrex(0xFFFF0000u);

@@ -703,6 +703,10 @@ DecodedInstruction decode_allegrex(std::uint32_t word) {
         if (group == 3u) {
             d.kind = OpcodeKind::Vcst;
             d.mnemonic = "vcst";
+        } else if (group == 1u && operation <= 3u) {
+            d.kind = OpcodeKind::Vrnd;
+            static constexpr const char *names[4]{"vrnds", "vrndi", "vrndf1", "vrndf2"};
+            d.mnemonic = names[operation];
         } else if (group == 1u && operation == 18u) {
             d.kind = OpcodeKind::Vf2h;
             d.mnemonic = "vf2h";
