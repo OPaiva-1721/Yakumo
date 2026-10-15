@@ -137,6 +137,7 @@ enum class OpcodeKind {
     Vcst,
     Vocp,
     Vrnd, // vrnds, vrndi, vrndf1, vrndf2: the VFPU's random number generator
+    Vbfy, // vbfy1, vbfy2: butterfly sums and differences of a vector's lanes
     VfpuHorizontal,
     Vrot,
     Vtfm,
@@ -145,6 +146,7 @@ enum class OpcodeKind {
     Vscl,
     Vdot,
     Vhdp,
+    Vcrs, // vcrs.t: the partial cross product (s.y*t.z, s.z*t.x, s.x*t.y)
     Vcmp,
     Vminmax,
     VfpuCompare3,

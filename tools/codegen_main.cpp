@@ -864,6 +864,40 @@ std::string emit_regular(const psprecomp::DecodedInstruction &d, std::uint32_t p
             << "u);\n";
         break;
     }
+    case psprecomp::OpcodeKind::Vcrs: {
+        // vcrs.t is only defined for triples; games pair it with a second
+        // vcrs and a subtraction (or use vcrsp) to finish a cross product.
+        const std::uint32_t destination = d.word & 0x7Fu;
+        const std::uint32_t source = (d.word >> 8u) & 0x7Fu;
+        const std::uint32_t target = (d.word >> 16u) & 0x7Fu;
+        out << "    { float vfpu_s[4]{}, vfpu_t[4]{}, vfpu_d[4]{};\n"
+            << "      ctx.read_vfpu_vector_with_source_prefix(vfpu_s, " << source << "u, 3u, 0u);\n"
+            << "      ctx.read_vfpu_vector_with_source_prefix(vfpu_t, " << target << "u, 3u, 1u);\n"
+            << "      vfpu_d[0] = vfpu_s[1] * vfpu_t[2];\n"
+            << "      vfpu_d[1] = vfpu_s[2] * vfpu_t[0];\n"
+            << "      vfpu_d[2] = vfpu_s[0] * vfpu_t[1];\n"
+            << "      ctx.write_vfpu_vector_with_destination_prefix(vfpu_d, " << destination << "u, 3u); }\n";
+        break;
+    }
+    case psprecomp::OpcodeKind::Vbfy: {
+        // vbfy1 pairs neighbouring lanes, vbfy2 pairs lanes two apart.
+        const bool second = ((d.word >> 16u) & 1u) != 0u;
+        const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
+        const std::uint32_t length = size_code + 1u;
+        const std::uint32_t destination = d.word & 0x7Fu;
+        const std::uint32_t source = (d.word >> 8u) & 0x7Fu;
+        out << "    { float vfpu_s[4]{}, vfpu_d[4]{};\n"
+            << "      ctx.read_vfpu_vector_with_source_prefix(vfpu_s, " << source << "u, " << length << "u, 0u);\n";
+        if (second)
+            out << "      vfpu_d[0] = vfpu_s[0] + vfpu_s[2]; vfpu_d[1] = vfpu_s[1] + vfpu_s[3];\n"
+                << "      vfpu_d[2] = vfpu_s[0] - vfpu_s[2]; vfpu_d[3] = vfpu_s[1] - vfpu_s[3];\n";
+        else
+            out << "      vfpu_d[0] = vfpu_s[0] + vfpu_s[1]; vfpu_d[1] = vfpu_s[0] - vfpu_s[1];\n"
+                << "      vfpu_d[2] = vfpu_s[2] + vfpu_s[3]; vfpu_d[3] = vfpu_s[2] - vfpu_s[3];\n";
+        out << "      ctx.write_vfpu_vector_with_destination_prefix(vfpu_d, " << destination << "u, " << length
+            << "u); }\n";
+        break;
+    }
     case psprecomp::OpcodeKind::VcrossQuat: {
         const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
         const std::uint32_t length = size_code + 1u;

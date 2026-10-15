@@ -1189,6 +1189,15 @@ int main() {
                     "VRND decode failed");
             }
         }
+        // Words taken from Naruto Shippuden: Ultimate Ninja Impact.
+        {
+            const auto vcrs = psprecomp::decode_allegrex(0x66818102u);
+            require(vcrs.kind == psprecomp::OpcodeKind::Vcrs && vcrs.mnemonic == "vcrs", "VCRS decode failed");
+            const auto vbfy1 = psprecomp::decode_allegrex(0xD0428080u);
+            require(vbfy1.kind == psprecomp::OpcodeKind::Vbfy && vbfy1.mnemonic == "vbfy1", "VBFY1 decode failed");
+            const auto vbfy2 = psprecomp::decode_allegrex(0xD0438080u);
+            require(vbfy2.kind == psprecomp::OpcodeKind::Vbfy && vbfy2.mnemonic == "vbfy2", "VBFY2 decode failed");
+        }
         require(psprecomp::decode_allegrex(0x7CA83A00u).kind == psprecomp::OpcodeKind::Ext, "EXT decode failed");
         require(psprecomp::decode_allegrex(0x0000000Fu).kind == psprecomp::OpcodeKind::Sync, "SYNC decode failed");
         const auto vflush = psprecomp::decode_allegrex(0xFFFF0000u);

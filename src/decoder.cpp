@@ -645,6 +645,9 @@ DecodedInstruction decode_allegrex(std::uint32_t word) {
         } else if (operation == 4u) {
             d.kind = OpcodeKind::Vhdp;
             d.mnemonic = "vhdp";
+        } else if (operation == 5u) {
+            d.kind = OpcodeKind::Vcrs;
+            d.mnemonic = "vcrs";
         } else {
             d.kind = OpcodeKind::Vfpu;
             d.mnemonic = "vfpu1";
@@ -727,6 +730,9 @@ DecodedInstruction decode_allegrex(std::uint32_t word) {
         } else if (group == 21u) {
             d.kind = OpcodeKind::Vcmov;
             d.mnemonic = ((word >> 19u) & 1u) == 0u ? "vcmovt" : "vcmovf";
+        } else if (group == 2u && (operation == 2u || operation == 3u)) {
+            d.kind = OpcodeKind::Vbfy;
+            d.mnemonic = operation == 2u ? "vbfy1" : "vbfy2";
         } else if (group == 2u && operation == 4u) {
             d.kind = OpcodeKind::Vocp;
             d.mnemonic = "vocp";
