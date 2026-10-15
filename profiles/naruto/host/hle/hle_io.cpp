@@ -1,6 +1,8 @@
 // IoFileMgrForUser and sceUmdUser: UMD access straight from the disc image
 // (including raw "sce_lbn" sector files) and a host directory for ms0:.
 #include "hle_common.hpp"
+#include "crypto/keys_file.hpp"
+#include "crypto/pgd.hpp"
 #include "kernel/fast_loading.hpp"
 #include "kernel/load_trace.hpp"
 #include "kernel/iso_image.hpp"
@@ -63,6 +65,9 @@ struct OpenFile {
     // The UMD device opened itself ("umd0:"): reads and seeks count 2048-byte
     // sectors, not bytes. `position` and `size` stay in bytes.
     bool block_device{};
+    // Set by the PGD key ioctl: reads return decrypted data, and `position`
+    // and `size` count decrypted bytes (crypto/pgd.hpp).
+    std::shared_ptr<pgd::PgdFile> pgd;
 };
 
 struct IoState {
@@ -249,7 +254,13 @@ std::uint32_t read_file(Runtime &rt, std::uint32_t fd, std::uint32_t address, st
     const std::uint32_t unit = file.block_device ? IsoImage::kSectorSize : 1u;
     requested = static_cast<std::uint32_t>(std::min<std::uint64_t>(std::uint64_t{requested} * unit, 0xFFFFFFFFu));
     std::vector<std::uint8_t> buffer;
-    if (file.kind == OpenFile::Kind::Disc) {
+    if (file.pgd) {
+        const std::uint64_t available = file.position < file.size ? file.size - file.position : 0u;
+        buffer.resize(static_cast<std::size_t>(std::min<std::uint64_t>(requested, available)));
+        const std::size_t count = file.pgd->read(file.position, buffer,
+            [&file](std::uint64_t offset, std::span<std::uint8_t> out) { return read_disc(file, offset, out); });
+        buffer.resize(count);
+    } else if (file.kind == OpenFile::Kind::Disc) {
         const std::uint64_t available = file.position < file.size ? file.size - file.position : 0u;
         requested = static_cast<std::uint32_t>(std::min<std::uint64_t>(requested, available));
         buffer.resize(requested);
@@ -309,6 +320,31 @@ std::int64_t seek_file(std::uint32_t fd, std::int64_t offset, std::uint32_t when
     return target / unit;
 }
 
+// The PGD key ioctl: reads the file's PGD header with the 16-byte version key
+// at `key_address` and, if it opens, makes the file serve decrypted data.
+std::int64_t set_pgd_key(Runtime &rt, OpenFile &file, std::uint32_t key_address, std::uint32_t key_length) {
+    constexpr std::uint32_t kIoError = 0x80010005u;
+    if (file.kind != OpenFile::Kind::Disc || key_length < 16u) return wide_error(io_error::kInvalidArgument);
+    pgd::Block vkey{};
+    for (std::size_t i = 0; i < vkey.size(); ++i)
+        vkey[i] = rt.memory().load8(key_address + static_cast<std::uint32_t>(i));
+    std::array<std::uint8_t, pgd::kHeaderSize> header{};
+    if (read_disc(file, 0u, header) != header.size()) return wide_error(kIoError);
+    std::string error;
+    auto opened = pgd::PgdFile::open(header, vkey, file.size, pgd::host_keys().source(), error);
+    if (!opened) {
+        std::cerr << "[pgd] " << file.path << ": " << error << "\n";
+        return wide_error(kIoError);
+    }
+    if (trace_io())
+        std::cerr << "[pgd] " << file.path << ": data size " << opened->size() << ", blocks of "
+                  << opened->desc().block_size << "\n";
+    file.size = opened->size();
+    file.position = 0u;
+    file.pgd = std::make_shared<pgd::PgdFile>(std::move(*opened));
+    return 0;
+}
+
 // Records the result of an *Async call that already did its work; v0 of the
 // call itself is 0, or the error when the descriptor is not open.
 void finish_async(AllegrexContext &ctx, std::uint32_t fd, std::int64_t result) {
@@ -348,6 +384,8 @@ void register_io(
     if (!disc_image.empty()) io().disc = std::make_unique<IsoImage>(disc_image);
     io().memory_stick = memory_stick;
     mods::attach_disc(io().disc.get());
+    // The player's keys (crypto/keys_file.hpp) sit in the game directory.
+    pgd::set_host_keys_path(memory_stick.parent_path() / "keys.txt");
 
     hle.add("IoFileMgrForUser", "sceIoOpen", [](Runtime &rt, AllegrexContext &ctx) {
         const std::string path = read_cstring(rt.memory(), arg(ctx, 0), 256u);
@@ -427,17 +465,21 @@ void register_io(
         }
         finish_async(ctx, fd, result);
     });
-    // No ioctl command changes what this host serves (UMD seek/cache hints),
-    // so each completes with 0.
-    hle.add("IoFileMgrForUser", "sceIoIoctlAsync", [](Runtime &, AllegrexContext &ctx) {
+    // 0x04100001 gives a PGD file its key (crypto/pgd.hpp); no other command
+    // changes what this host serves (UMD seek/cache hints), so each completes
+    // with 0.
+    hle.add("IoFileMgrForUser", "sceIoIoctlAsync", [](Runtime &rt, AllegrexContext &ctx) {
         const std::uint32_t fd = arg(ctx, 0);
         const auto found = io().files.find(fd);
         if (found == io().files.end() || found->second.close_pending) {
             kernel().finish(ctx, io_error::kBadFileDescriptor);
             return;
         }
-        log_once("ioctl:" + psprecomp::hex32(arg(ctx, 1)), "[io] ioctl-async command " + psprecomp::hex32(arg(ctx, 1)));
-        finish_async(ctx, fd, 0);
+        const std::uint32_t command = arg(ctx, 1);
+        log_once("ioctl:" + psprecomp::hex32(command), "[io] ioctl-async command " + psprecomp::hex32(command));
+        const std::int64_t result =
+            command == pgd::kIoctlSetKey ? set_pgd_key(rt, found->second, arg(ctx, 2), arg(ctx, 3)) : 0;
+        finish_async(ctx, fd, result);
     });
     hle.add("IoFileMgrForUser", "sceIoCloseAsync", [](Runtime &, AllegrexContext &ctx) {
         const std::uint32_t fd = arg(ctx, 0);

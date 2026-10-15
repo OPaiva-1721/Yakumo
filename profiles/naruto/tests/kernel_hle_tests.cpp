@@ -11,6 +11,8 @@
 #include <ctime>
 #include "hle/utility_dialog.hpp"
 #include <thread>
+#include "crypto/keys_file.hpp"
+#include "crypto/pgd.hpp"
 #include "kernel/kernel.hpp"
 #include "psprecomp/common.hpp"
 
@@ -551,6 +553,7 @@ class PublicFiles {
 public:
     std::filesystem::path root = std::filesystem::temp_directory_path() /
         ("yakumo-kernel-contract-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::vector<std::uint8_t> extra;
     PublicFiles() { std::filesystem::create_directories(root / "ms"); }
     ~PublicFiles() {
         std::error_code ec;
@@ -575,15 +578,42 @@ public:
         std::copy(filename.begin(), filename.end(), bytes.begin() + record + 33);
         const std::string payload = "fixture!";
         std::copy(payload.begin(), payload.end(), bytes.begin() + 21u * 2048u);
+        // Sectors 22-23: raw bytes a test reaches as disc0:/sce_lbn22_size<n>.
+        std::copy_n(extra.begin(), std::min<std::size_t>(extra.size(), 2u * 2048u), bytes.begin() + 22u * 2048u);
         const auto path = root / "public.iso";
         std::ofstream stream(path, std::ios::binary);
         stream.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         return path;
     }
 };
+// Dummy keys (no console key) for a PGD file on the synthetic disc; register_io
+// reads keys.txt next to the memory-stick directory.
+constexpr const char *kDummyKeysText = "kirk.aes.38 = 20272e353c434a51585f666d747b8289\n"
+                                       "kirk.aes.39 = 3f464d545b626970777e858c939aa1a8\n"
+                                       "kirk.aes.63 = 7d848b9299a0a7aeb5bcc3cad1d8dfe6\n"
+                                       "amctrl.1cd4 = 9ca3aab1b8bfc6cdd4dbe2e9f0f7fe05\n"
+                                       "amctrl.1ce4 = bbc2c9d0d7dee5ecf3fa01080f161d24\n"
+                                       "amctrl.1cf4 = dae1e8eff6fd040b121920272e353c43\n";
+mhp3rd::pgd::Block filled_block(std::uint8_t seed) {
+    mhp3rd::pgd::Block block{};
+    for (std::size_t i = 0; i < block.size(); ++i) block[i] = static_cast<std::uint8_t>(seed + 3u * i);
+    return block;
+}
+std::vector<std::uint8_t> pgd_plain() {
+    std::vector<std::uint8_t> plain(1000);
+    for (std::size_t i = 0; i < plain.size(); ++i) plain[i] = static_cast<std::uint8_t>(i * 7u + 3u);
+    return plain;
+}
 void io_contracts() {
     Fixture f;
     PublicFiles files;
+    {
+        std::ofstream(files.root / "keys.txt") << kDummyKeysText;
+        const auto keys = mhp3rd::pgd::KeysFile::parse(kDummyKeysText);
+        files.extra = mhp3rd::pgd::PgdFile::build(
+            pgd_plain(), filled_block(0x10u), filled_block(0x20u), filled_block(0x30u), keys.source());
+        check(files.extra.size() == 0x90u + 0x400u, "the test PGD fits in the spare disc sectors");
+    }
     mhp3rd::HleRegistrar hle(f.runtime);
     mhp3rd::register_io(hle, {}, files.root / "ms");
     auto call = [&](const char *name, std::initializer_list<unsigned> args = {}) {
@@ -713,6 +743,39 @@ void io_contracts() {
             "raw device reads whole sectors and returns the sector count");
         check(call("sceIoLseek", {raw, 0, 0, 0, 1}) == 17, "a raw read advances by the sectors read");
         check(call("sceIoClose", {raw}) == 0, "raw device closes");
+    }
+    {
+        auto &memory = f.runtime.memory();
+        const unsigned result = Fixture::output + 64u, key = Fixture::output + 128u, data = Fixture::output + 512u;
+        const auto put_key = [&](const mhp3rd::pgd::Block &block) {
+            for (std::size_t i = 0; i < block.size(); ++i)
+                memory.store8(key + static_cast<unsigned>(i), block[i]);
+        };
+        const auto plain = pgd_plain();
+        const auto pfd = path_call("sceIoOpen", "disc0:/sce_lbn22_size1168", 0x40000001u);
+        check(static_cast<int>(pfd) > 0, "the PGD file opens");
+        put_key(filled_block(0x30u));
+        check(call("sceIoIoctlAsync", {pfd, mhp3rd::pgd::kIoctlSetKey, key, 16u, 0u, 0u}) == 0 &&
+                call("sceIoWaitAsync", {pfd, result}) == 0 && memory.load32(result) == 0,
+            "the PGD key ioctl switches the file to its decrypted data");
+        check(call("sceIoLseek", {pfd, 0, 0, 0, 2}) == plain.size(), "a PGD file's size is its plain data size");
+        const auto matches = [&](std::size_t from, std::size_t count) {
+            for (std::size_t i = 0; i < count; ++i)
+                if (memory.load8(data + static_cast<unsigned>(i)) != plain[from + i]) return false;
+            return true;
+        };
+        check(call("sceIoLseek", {pfd, 0, 0, 0, 0}) == 0 && call("sceIoRead", {pfd, data, 2000u}) == plain.size() &&
+                matches(0, plain.size()),
+            "reading a PGD file returns the decrypted data");
+        check(call("sceIoLseek", {pfd, 0, 600, 0, 0}) == 600 && call("sceIoReadAsync", {pfd, data, 50u}) == 0 &&
+                call("sceIoWaitAsync", {pfd, result}) == 0 && memory.load32(result) == 50 && matches(600, 50),
+            "an async read inside a PGD file decrypts from its offset");
+        const auto wrong = path_call("sceIoOpen", "disc0:/sce_lbn22_size1168", 0x40000001u);
+        put_key(filled_block(0x77u));
+        check(call("sceIoIoctlAsync", {wrong, mhp3rd::pgd::kIoctlSetKey, key, 16u, 0u, 0u}) == 0 &&
+                call("sceIoWaitAsync", {wrong, result}) == 0 && static_cast<int>(memory.load32(result)) < 0,
+            "a wrong PGD key fails the ioctl");
+        check(call("sceIoClose", {pfd}) == 0 && call("sceIoClose", {wrong}) == 0, "PGD files close");
     }
     check(call("sceIoRead", {disc, Fixture::output, 1}) == 0 && mhp3rd::read_open_file(disc, 8, prefix.data(), 5) == 0,
         "disc EOF applies to both read interfaces");
