@@ -60,6 +60,9 @@ struct OpenFile {
     // sceIoWaitAsync/sceIoPollAsync; a closed descriptor lingers until then.
     std::optional<std::int64_t> async_result;
     bool close_pending{};
+    // The UMD device opened itself ("umd0:"): reads and seeks count 2048-byte
+    // sectors, not bytes. `position` and `size` stay in bytes.
+    bool block_device{};
 };
 
 struct IoState {
@@ -158,6 +161,11 @@ std::int64_t open_file(const std::string &full_path, std::uint32_t flags) {
             // also has an entry, so resolve the device before that directory.
             file.kind = OpenFile::Kind::Disc;
             file.size = io().disc->size_bytes();
+            // umd0:/umd1:/umd: are block devices counted in sectors; disc0:
+            // (the ISO file system) keeps byte offsets.
+            std::string device = full_path.substr(0, 3);
+            std::transform(device.begin(), device.end(), device.begin(), [](unsigned char c) { return std::tolower(c); });
+            file.block_device = device == "umd";
         } else if (const auto entry = io().disc->find(split.path)) {
             file.kind = entry->directory ? OpenFile::Kind::Directory : OpenFile::Kind::Disc;
             file.disc_offset = static_cast<std::uint64_t>(entry->lba) * IsoImage::kSectorSize;
@@ -238,6 +246,8 @@ std::uint32_t read_file(Runtime &rt, std::uint32_t fd, std::uint32_t address, st
     if (found == io().files.end() || found->second.kind == OpenFile::Kind::Directory || found->second.close_pending)
         return io_error::kBadFileDescriptor;
     OpenFile &file = found->second;
+    const std::uint32_t unit = file.block_device ? IsoImage::kSectorSize : 1u;
+    requested = static_cast<std::uint32_t>(std::min<std::uint64_t>(std::uint64_t{requested} * unit, 0xFFFFFFFFu));
     std::vector<std::uint8_t> buffer;
     if (file.kind == OpenFile::Kind::Disc) {
         const std::uint64_t available = file.position < file.size ? file.size - file.position : 0u;
@@ -268,7 +278,7 @@ std::uint32_t read_file(Runtime &rt, std::uint32_t fd, std::uint32_t address, st
         std::cerr << "[io] read fd=" << fd << " " << file.path << " offset=" << file.position
                   << " size=" << buffer.size() << " -> " << psprecomp::hex32(address) << "\n";
     file.position += buffer.size();
-    return static_cast<std::uint32_t>(buffer.size());
+    return static_cast<std::uint32_t>(buffer.size() / unit);
 }
 
 // sceIoLseek and sceIoLseekAsync: the new position, or a widened error.
@@ -276,6 +286,8 @@ std::int64_t seek_file(std::uint32_t fd, std::int64_t offset, std::uint32_t when
     auto found = io().files.find(fd);
     if (found == io().files.end() || found->second.close_pending) return wide_error(io_error::kBadFileDescriptor);
     OpenFile &file = found->second;
+    const std::int64_t unit = file.block_device ? IsoImage::kSectorSize : 1;
+    offset *= unit;
     std::int64_t base = 0;
     switch (whence) {
     case 0u:
@@ -294,7 +306,7 @@ std::int64_t seek_file(std::uint32_t fd, std::int64_t offset, std::uint32_t when
     if (target < 0) return wide_error(io_error::kInvalidArgument);
     file.position = static_cast<std::uint64_t>(target);
     if (trace_io()) std::cerr << "[io] lseek fd=" << fd << " " << file.path << " -> " << file.position << "\n";
-    return target;
+    return target / unit;
 }
 
 // Records the result of an *Async call that already did its work; v0 of the

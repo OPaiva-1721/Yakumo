@@ -703,6 +703,17 @@ void io_contracts() {
                 call("sceIoWaitAsync", {afd, result}) == badfd,
             "async operations on a closed descriptor are rejected");
     }
+    {
+        auto &memory = f.runtime.memory();
+        const auto raw = path_call("sceIoOpen", "umd0:", 1);
+        check(static_cast<int>(raw) > 0, "raw UMD device opens");
+        check(call("sceIoLseek", {raw, 0, 16, 0, 0}) == 16 && f.ctx.gpr[3] == 0, "raw device seeks in sectors");
+        check(call("sceIoRead", {raw, Fixture::output, 1}) == 1 && memory.load8(Fixture::output) == 1 &&
+                memory.load8(Fixture::output + 1) == 'C' && memory.load8(Fixture::output + 5) == '1',
+            "raw device reads whole sectors and returns the sector count");
+        check(call("sceIoLseek", {raw, 0, 0, 0, 1}) == 17, "a raw read advances by the sectors read");
+        check(call("sceIoClose", {raw}) == 0, "raw device closes");
+    }
     check(call("sceIoRead", {disc, Fixture::output, 1}) == 0 && mhp3rd::read_open_file(disc, 8, prefix.data(), 5) == 0,
         "disc EOF applies to both read interfaces");
     check(
