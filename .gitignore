@@ -46,6 +46,8 @@ overlay_*.bin
 # The MHP3rd AOT corpora are derived from the user's executable
 /profiles/mhp3rd/generated/
 /profiles/mhp3rd/overlays/
+/profiles/naruto/generated/
+/profiles/naruto/overlays/
 
 # Local dumps next to the repository root
 /dump/
