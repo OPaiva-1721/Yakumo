@@ -1536,6 +1536,29 @@ void utility_and_savedata_contracts() {
         check(request(11) == 0x80110308u, "list without an idList is a parameter error");
         f.string(params + 0x4c, "SLOT1");
     }
+    {
+        // FILES (12): a save's files into the SceUtilitySavedataFileListInfo at
+        // fileList (0x5F8): system files (PARAM.SFO, ICON0.PNG, ...) apart from
+        // the game's own; entries are 80 bytes with the name at 64.
+        const unsigned info = aux + 0x500, normal = aux + 0x600, system = aux + 0x800;
+        memory.store32(params + 0x5f8, info);
+        for (unsigned i = 0; i < 36; i += 4) memory.store32(info + i, 0);
+        memory.store32(info + 4, 4);
+        memory.store32(info + 8, 4);
+        memory.store32(info + 28, normal);
+        memory.store32(info + 32, system);
+        check(request(12) == 0 && memory.load32(info + 16) == 1 && mhp3rd::read_cstring(memory, normal + 64) == "DATA.DAT" &&
+                memory.load32(normal + 8) == 12 && memory.load32(info + 20) >= 1,
+            "files lists the game's file with its size and the system files apart");
+        bool has_param_sfo = false;
+        for (unsigned i = 0; i < memory.load32(info + 20); ++i)
+            has_param_sfo = has_param_sfo || mhp3rd::read_cstring(memory, system + i * 80 + 64) == "PARAM.SFO";
+        check(has_param_sfo, "files lists PARAM.SFO among the system files");
+        f.string(params + 0x4c, "MISSING");
+        check(request(12) == 0x80110327u, "files of a missing save reports no data");
+        f.string(params + 0x4c, "SLOT1");
+        memory.store32(params + 0x5f8, 0);
+    }
     memory.store32(params + 0x60, 0);
     for (auto mode : {7u, 9u, 10u}) {
         check(request(3) == 0 && request(mode) == 0 && request(mode) == 0x80110347u,

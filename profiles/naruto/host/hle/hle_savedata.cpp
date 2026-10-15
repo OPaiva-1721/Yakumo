@@ -59,8 +59,26 @@ constexpr std::uint32_t kUtilityData = 0x5D8u;
 constexpr std::uint32_t kKey = 0x5DCu; // char[16], firmware 2.00 and later
 constexpr std::uint32_t kSecureVersion = 0x5ECu;
 constexpr std::uint32_t kMinimumSizeWithKey = 0x5ECu;
-constexpr std::uint32_t kIdList = 0x5F4u; // SceUtilitySavedataIdListInfo *
+constexpr std::uint32_t kIdList = 0x5F4u;   // SceUtilitySavedataIdListInfo *
+constexpr std::uint32_t kFileList = 0x5F8u; // SceUtilitySavedataFileListInfo *
 } // namespace param
+
+// SceUtilitySavedataFileListInfo {max secure, normal, system; result secure,
+// normal, system; entries secure, normal, system} and its 80-byte entries
+// {st_mode, unknown, st_size (64 bits), ctime, atime, mtime, name[16]}.
+namespace file_list {
+constexpr std::uint32_t kMaxNormal = 4u;
+constexpr std::uint32_t kMaxSystem = 8u;
+constexpr std::uint32_t kResultSecure = 12u;
+constexpr std::uint32_t kResultNormal = 16u;
+constexpr std::uint32_t kResultSystem = 20u;
+constexpr std::uint32_t kNormalEntries = 28u;
+constexpr std::uint32_t kSystemEntries = 32u;
+constexpr std::uint32_t kEntrySize = 80u;
+constexpr std::uint32_t kEntrySize64 = 8u;
+constexpr std::uint32_t kEntryName = 64u;
+constexpr std::uint32_t kFileMode = 0x21FFu;
+} // namespace file_list
 
 // SceUtilitySavedataIdListInfo {maxCount, resultCount, entries} and its
 // 72-byte entries {st_mode, ctime, atime, mtime (16 bytes each), name[20]}.
@@ -86,6 +104,7 @@ enum Mode : std::uint32_t {
     kAutoDelete = 9,
     kSingleDelete = 10,
     kList = 11,
+    kFiles = 12,
 };
 
 const char *mode_name(std::uint32_t mode) {
@@ -105,6 +124,7 @@ constexpr std::uint32_t kDeleteNoData = 0x80110347u;
 constexpr std::uint32_t kSaveAccessError = 0x80110385u;
 constexpr std::uint32_t kSaveParam = 0x80110388u;
 constexpr std::uint32_t kSizesNoData = 0x801103C7u;
+constexpr std::uint32_t kReadWriteNoData = 0x80110327u;
 } // namespace result
 
 constexpr std::uint32_t kClusterSize = 0x8000u;
@@ -378,6 +398,49 @@ std::uint32_t do_list(psprecomp::GuestMemory &memory, std::uint32_t params) {
     return result::kOk;
 }
 
+// FILES: the files of one save folder, the console's own (PARAM.SFO, icons,
+// sound) in the system list and the game's in the normal one. Secure files are
+// not told apart; every game file is listed as normal.
+std::uint32_t do_files(psprecomp::GuestMemory &memory, std::uint32_t params, const std::string &save_name) {
+    const std::uint32_t info = memory.load32(params + param::kFileList);
+    if (info == 0u) return result::kLoadParam;
+    const auto folder = savedata::save_folder(state().memory_stick, files_for(memory, params, save_name));
+    std::error_code ec;
+    if (!std::filesystem::is_directory(folder, ec)) return result::kReadWriteNoData;
+
+    static const std::vector<std::string> kSystemFiles = {"PARAM.SFO", "ICON0.PNG", "ICON1.PMF", "PIC1.PNG", "SND0.AT3"};
+    std::vector<std::pair<std::string, std::uint64_t>> normal, system;
+    for (const auto &file : std::filesystem::directory_iterator(folder, ec)) {
+        if (!file.is_regular_file(ec)) continue;
+        const std::string name = path_to_utf8(file.path().filename());
+        const bool is_system = std::find(kSystemFiles.begin(), kSystemFiles.end(), name) != kSystemFiles.end();
+        (is_system ? system : normal).emplace_back(name, file.file_size(ec));
+    }
+    std::sort(normal.begin(), normal.end());
+    std::sort(system.begin(), system.end());
+
+    const auto fill = [&memory, info](const std::vector<std::pair<std::string, std::uint64_t>> &files,
+                          std::uint32_t max_field, std::uint32_t entries_field, std::uint32_t result_field) {
+        const std::uint32_t max = memory.load32(info + max_field);
+        const std::uint32_t entries = memory.load32(info + entries_field);
+        std::uint32_t count = 0u;
+        for (const auto &[name, size] : files) {
+            if (count >= max || entries == 0u) break;
+            const std::uint32_t entry = entries + count * file_list::kEntrySize;
+            for (std::uint32_t i = 0; i < file_list::kEntrySize; i += 4u) memory.store32(entry + i, 0u);
+            memory.store32(entry, file_list::kFileMode);
+            store64(memory, entry + file_list::kEntrySize64, size);
+            write_cstring(memory, entry + file_list::kEntryName, name, 16u);
+            ++count;
+        }
+        memory.store32(info + result_field, count);
+    };
+    memory.store32(info + file_list::kResultSecure, 0u);
+    fill(normal, file_list::kMaxNormal, file_list::kNormalEntries, file_list::kResultNormal);
+    fill(system, file_list::kMaxSystem, file_list::kSystemEntries, file_list::kResultSystem);
+    return result::kOk;
+}
+
 // Picks the save a list dialog would land on when the player just confirms:
 // for loading and deleting the first listed save that exists, for saving the
 // first listed name.
@@ -425,6 +488,8 @@ std::uint32_t run_request(psprecomp::GuestMemory &memory, std::uint32_t params) 
         return do_sizes(memory, params);
     case kList:
         return do_list(memory, params);
+    case kFiles:
+        return do_files(memory, params, save_name);
     default:
         // Not used by this game. Report a parameter error so the guest takes
         // its failure path instead of reading results that were never written.
