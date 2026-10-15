@@ -483,6 +483,20 @@ void register_io(
         kernel().finish(ctx, io().disc ? (kPresent | kReady | kReadable) : 0x01u);
     });
     hle.add("sceUmdUser", "sceUmdGetErrorStat", [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 0u); });
+    hle.add("sceUmdUser", "sceUmdCheckMedium",
+        [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, io().disc ? 1u : 0u); });
+    // The disc never changes while the game runs, so the callback is accepted
+    // and never notified.
+    hle.add(
+        "sceUmdUser", "sceUmdRegisterUMDCallBack", [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 0u); });
+    // A present disc is already ready and readable; any state a game waits for
+    // (0x10 ready, 0x20 readable, 0x02 present) holds at once.
+    const auto wait_drive_stat = [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 0u); };
+    hle.add("sceUmdUser", "sceUmdWaitDriveStat", wait_drive_stat);
+    hle.add("sceUmdUser", "sceUmdWaitDriveStatCB", [wait_drive_stat](Runtime &rt, AllegrexContext &ctx) {
+        (void)kernel().deliver_callbacks();
+        wait_drive_stat(rt, ctx);
+    });
 }
 
 } // namespace mhp3rd

@@ -571,6 +571,7 @@ void io_contracts() {
             path_call("sceIoOpen", "disc0:/public.txt", 1) == device,
         "unsupported device and absent disc rejected");
     check(f.call("sceUmdUser", "sceUmdGetDriveStat") == 1, "absent disc reports no media");
+    check(f.call("sceUmdUser", "sceUmdCheckMedium") == 0, "absent disc reports no medium");
     check(path_call("sceIoOpen", "ms0:/missing", 1) == missing, "missing memory-stick file rejected");
     const auto fd = path_call("sceIoOpen", "MS0:\\folder\\..\\folder\\sample.txt", 0x602);
     check(static_cast<int>(fd) > 0, "create normalizes path and creates parent directories");
@@ -626,6 +627,16 @@ void io_contracts() {
     check(f.call("sceUmdUser", "sceUmdGetDriveStat") == 0x32 && f.call("sceUmdUser", "sceUmdActivate") == 0 &&
             f.call("sceUmdUser", "sceUmdGetErrorStat") == 0,
         "synthetic disc reports ready/readable");
+    check(f.call("sceUmdUser", "sceUmdCheckMedium") == 1, "inserted disc reports a medium");
+    check(f.call("sceUmdUser", "sceUmdRegisterUMDCallBack", {0x1234u}) == 0, "UMD callback registration succeeds");
+    {
+        const auto caller = f.kernel.current_uid();
+        for (const char *name : {"sceUmdWaitDriveStat", "sceUmdWaitDriveStatCB"}) {
+            check(f.call("sceUmdUser", name, {0x20u, 0u}) == 0 && f.kernel.current_uid() == caller &&
+                    f.kernel.find_thread(caller)->status != mhp3rd::ThreadStatus::Waiting,
+                "waiting for a drive state the ready disc already has returns at once");
+        }
+    }
     check(path_call("sceIoOpen", "disc0:/public.txt", 2) == readonly &&
             path_call("sceIoOpen", "disc0:/missing", 1) == missing,
         "disc rejects writes and missing files");
