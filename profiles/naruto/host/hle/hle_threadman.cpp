@@ -156,7 +156,7 @@ void register_semaphores(HleRegistrar &hle) {
         }
         const SceUID uid = kernel().allocate_uid();
         kernel().semaphores[uid] =
-            Semaphore{read_cstring(rt.memory(), arg(ctx, 0), 32u), arg(ctx, 1), initial, maximum, {}};
+            Semaphore{read_cstring(rt.memory(), arg(ctx, 0), 32u), arg(ctx, 1), initial, maximum, {}, initial};
         kernel().finish(ctx, as_unsigned(uid));
     });
     hle.add("ThreadManForUser", "sceKernelDeleteSema", [](Runtime &, AllegrexContext &ctx) {
@@ -187,7 +187,7 @@ void register_semaphores(HleRegistrar &hle) {
         kernel().release_semaphore_waiters(uid);
         kernel().finish(ctx, 0u);
     });
-    hle.add("ThreadManForUser", "sceKernelWaitSema", [](Runtime &, AllegrexContext &ctx) {
+    const auto wait_sema = [](Runtime &, AllegrexContext &ctx) {
         const SceUID uid = as_signed(arg(ctx, 0));
         auto found = kernel().semaphores.find(uid);
         const auto wanted = as_signed(arg(ctx, 1));
@@ -212,6 +212,32 @@ void register_semaphores(HleRegistrar &hle) {
         wait.value = static_cast<std::uint32_t>(wanted);
         wait.timeout_address = arg(ctx, 2);
         kernel().block(ctx, wait, 0u);
+    };
+    hle.add("ThreadManForUser", "sceKernelWaitSema", wait_sema);
+    // The *CB variant runs the thread's notified callbacks before waiting.
+    hle.add("ThreadManForUser", "sceKernelWaitSemaCB", [wait_sema](Runtime &rt, AllegrexContext &ctx) {
+        (void)kernel().deliver_callbacks();
+        wait_sema(rt, ctx);
+    });
+    // SceKernelSemaInfo: size, name[32], attributes, initial, current and
+    // maximum count, number of waiting threads.
+    hle.add("ThreadManForUser", "sceKernelReferSemaStatus", [](Runtime &rt, AllegrexContext &ctx) {
+        const auto found = kernel().semaphores.find(as_signed(arg(ctx, 0)));
+        if (found == kernel().semaphores.end()) {
+            kernel().finish(ctx, error::kUnknownSemid);
+            return;
+        }
+        const Semaphore &sema = found->second;
+        auto &memory = rt.memory();
+        const std::uint32_t info = arg(ctx, 1);
+        memory.store32(info, 56u);
+        write_cstring(memory, info + 4u, sema.name, 32u);
+        memory.store32(info + 36u, sema.attributes);
+        memory.store32(info + 40u, as_unsigned(sema.initial_count));
+        memory.store32(info + 44u, as_unsigned(sema.count));
+        memory.store32(info + 48u, as_unsigned(sema.max_count));
+        memory.store32(info + 52u, static_cast<std::uint32_t>(sema.waiters.size()));
+        kernel().finish(ctx, 0u);
     });
     hle.add("ThreadManForUser", "sceKernelPollSema", [](Runtime &, AllegrexContext &ctx) {
         auto found = kernel().semaphores.find(as_signed(arg(ctx, 0)));

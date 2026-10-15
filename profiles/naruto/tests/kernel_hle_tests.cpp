@@ -277,6 +277,34 @@ void semaphore_contracts() {
         check(f.thread(name, {uid, 1, 0}) == mhp3rd::error::kUnknownSemid, "deleted semaphore returns unknown UID");
 }
 
+void semaphore_status_and_callback_wait_contracts() {
+    Fixture f;
+    auto &memory = f.runtime.memory();
+    f.string(Fixture::text, "status-sema");
+    const auto uid = f.thread("sceKernelCreateSema", {Fixture::text, 0x100, 1, 3});
+    memory.store32(Fixture::output, 56);
+    check(f.thread("sceKernelReferSemaStatus", {uid, Fixture::output}) == 0, "refer known semaphore succeeds");
+    check(mhp3rd::read_cstring(memory, Fixture::output + 4) == "status-sema" &&
+            memory.load32(Fixture::output + 36) == 0x100 && memory.load32(Fixture::output + 40) == 1 &&
+            memory.load32(Fixture::output + 44) == 1 && memory.load32(Fixture::output + 48) == 3 &&
+            memory.load32(Fixture::output + 52) == 0,
+        "refer reports name, attributes, initial, current and maximum counts and waiters");
+    check(f.thread("sceKernelReferSemaStatus", {0x7777u, Fixture::output}) == mhp3rd::error::kUnknownSemid,
+        "refer unknown semaphore rejected");
+    check(f.thread("sceKernelWaitSemaCB", {uid, 1, 0}) == 0 && f.kernel.semaphores.at(uid).count == 0,
+        "callback-aware wait consumes available count");
+    const auto loader = f.kernel.current_uid();
+    const auto helper = f.helper();
+    f.thread("sceKernelWaitSemaCB", {uid, 1, 0});
+    check(f.kernel.current_uid() == static_cast<int>(helper), "callback-aware wait blocks like a plain wait");
+    memory.store32(Fixture::output, 56);
+    check(f.thread("sceKernelReferSemaStatus", {uid, Fixture::output}) == 0 &&
+            memory.load32(Fixture::output + 52) == 1,
+        "refer counts waiting threads");
+    check(f.thread("sceKernelSignalSema", {uid, 1}) == 0 && f.kernel.current_uid() == loader,
+        "signal wakes the callback-aware waiter");
+}
+
 void event_flag_contracts() {
     Fixture f;
     const auto uid = f.thread("sceKernelCreateEventFlag", {Fixture::text, 0, 0x3});
@@ -1619,6 +1647,7 @@ int main(int argc, char **argv) {
         scheduler_contracts();
         thread_end_and_dispatch_contracts();
         semaphore_contracts();
+        semaphore_status_and_callback_wait_contracts();
         event_flag_contracts();
         mutex_contracts();
         interrupt_and_host_wait_contracts();
