@@ -42,7 +42,9 @@ Guards sample_guards() {
     // Unlimited already runs the game unpaced, and without a window nothing
     // holds it to real time either.
     guards.available = windowed() && !settings::current().unthrottled;
-    guards.online = adhoc_networking_on() || adhoc_session_active();
+    // Naruto starts ad hoc networking at boot, whether or not anyone plays
+    // with others, so only a session going counts as ad hoc play.
+    guards.online = adhoc_session_active();
 #if defined(MHP3RD_HAS_RENDERER)
     guards.menu = ui::menu_over_game();
 #endif

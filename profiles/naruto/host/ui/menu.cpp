@@ -1491,8 +1491,9 @@ void Menu::qol() {
     }
     section("Singleplayer Only Cheats:");
     {
-        // Single player only: during ad hoc play the bind does nothing.
-        const bool online = adhoc_networking_on() || adhoc_session_active();
+        // Single player only: during ad hoc play the bind does nothing. Naruto
+        // starts ad hoc networking at boot, so only a session counts.
+        const bool online = adhoc_session_active();
         const auto guarded = [&](RowOptions o) {
             if (o.disabled) return o;
             if (s.unthrottled) {

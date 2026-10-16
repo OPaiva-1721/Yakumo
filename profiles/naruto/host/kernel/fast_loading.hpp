@@ -41,7 +41,7 @@ struct Guards {
     bool enabled{};      // the setting is on, Game speed is Normal and there is a window
     bool buttons_held{}; // a button or a D-pad direction is down (the sticks do not count)
     bool movie{};        // a movie is playing
-    bool online{};       // ad hoc networking is on, or a session is going
+    bool online{};       // an ad hoc session is going
     bool menu{};         // the in-game menu is open over the game
 };
 

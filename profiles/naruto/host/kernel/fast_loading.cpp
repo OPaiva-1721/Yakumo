@@ -1,6 +1,7 @@
 #include "kernel/fast_loading.hpp"
 
 #include "hle/hle_common.hpp"
+#include "kernel/load_trace.hpp"
 #include "settings/settings.hpp"
 #include "adhoc/session.hpp"
 #if defined(MHP3RD_HAS_RENDERER)
@@ -44,7 +45,9 @@ Guards sample_guards() {
     guards.enabled = s.fast_loading && !s.unthrottled && windowed();
     guards.buttons_held = state().buttons_held;
     guards.movie = mpeg_active();
-    guards.online = adhoc_networking_on() || adhoc_session_active();
+    // Naruto starts ad hoc networking at boot, whether or not anyone plays
+    // with others, so only a session going counts as ad hoc play.
+    guards.online = adhoc_session_active();
 #if defined(MHP3RD_HAS_RENDERER)
     guards.menu = ui::menu_over_game();
 #endif
@@ -90,7 +93,12 @@ void note_buttons(bool held) {
 void update() {
     Detector &detector = state().detector;
     const bool was_fast = detector.fast();
+    const Reason was_reason = detector.reason();
     const bool fast = detector.update(kernel().now_us(), sample_guards());
+    if (load_trace::enabled() && detector.reason() != was_reason) {
+        std::printf("[load] fast loading %s\n", fast ? "on" : reason_name(detector.reason()));
+        std::fflush(stdout);
+    }
     if (fast && !was_fast)
         begin_episode();
     else if (!fast && was_fast)
