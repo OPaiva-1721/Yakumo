@@ -6883,7 +6883,12 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     static const bool no_lighting = std::getenv("MHP3RD_NO_LIGHTING") != nullptr;
     static const bool no_fog = no_lighting || std::getenv("MHP3RD_NO_FOG") != nullptr;
     const bool lit = call.lighting_enabled && !no_lighting && !call.through && !call.clear_mode;
-    const bool use_material_color = !no_material_color && !call.has_vertex_color && !call.lighting_enabled;
+    // Through-mode draws are never lit, whatever the lighting enable says, so
+    // they take the material colour too: Naruto's distance blur lays its
+    // layers in through mode with lighting left on and the layer's alpha
+    // (0x40) in the material colour.
+    const bool use_material_color =
+        !no_material_color && !call.has_vertex_color && (!call.lighting_enabled || call.through);
     // Replay and raw decoding keep their original pipelines until separately
     // covered. For CPU vertices, check alpha as they are already converted.
     const bool track_opaque = impl.opaque_draws && !raw && !impl.interpolating &&
@@ -7486,6 +7491,54 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
 
     static const bool trace_fb = std::getenv("MHP3RD_TRACE_FB_TEXTURES") != nullptr;
     if (trace_fb && call.texture.enabled && !call.clear_mode) impl.trace_framebuffer_texture(call);
+    // MHP3RD_TRACE_TEXTURES=addr[,addr...] (hex): every draw that samples one
+    // of these textures, with the state that decides how it lands, for the
+    // first 200 such draws.
+    static const std::vector<std::uint32_t> traced_textures = [] {
+        std::vector<std::uint32_t> list;
+        if (const char *text = std::getenv("MHP3RD_TRACE_TEXTURES")) {
+            std::string item;
+            for (const char *c = text;; ++c) {
+                if (*c == ',' || *c == '\0') {
+                    if (!item.empty()) list.push_back(GuestMemory::canonical(std::stoul(item, nullptr, 16)));
+                    item.clear();
+                    if (*c == '\0') break;
+                } else {
+                    item.push_back(*c);
+                }
+            }
+        }
+        return list;
+    }();
+    static std::uint32_t traced_draws = 0u;
+    if (!traced_textures.empty() && call.texture.enabled && traced_draws < 200u &&
+        std::find(traced_textures.begin(), traced_textures.end(), GuestMemory::canonical(call.texture.address)) !=
+            traced_textures.end()) {
+        ++traced_draws;
+        const Vertex &first = call.vertices.empty() ? Vertex{} : call.vertices.front();
+        const Vertex &last = call.vertices.empty() ? Vertex{} : call.vertices.back();
+        std::cout << std::hex << "[textrace] frame " << std::dec << impl.frames << std::hex << " tex 0x"
+                  << call.texture.address << " fmt=" << std::dec << static_cast<std::uint32_t>(call.texture.format)
+                  << " " << call.texture.width << "x" << call.texture.height << " bufw=" << call.texture.buffer_width
+                  << " target 0x" << std::hex << call.target.color_address << std::dec
+                  << " fbfmt=" << call.target.color_format << (call.through ? " through" : " transform")
+                  << " prim=" << static_cast<int>(call.primitive) << " verts=" << call.vertices.size() << " pos=("
+                  << first.position[0] << "," << first.position[1] << "," << first.position[2] << ")-("
+                  << last.position[0] << "," << last.position[1] << "," << last.position[2] << ") uv=("
+                  << first.texcoord[0] << "," << first.texcoord[1] << ")-(" << last.texcoord[0] << ","
+                  << last.texcoord[1] << ") color=0x" << std::hex << first.color << " material=0x"
+                  << call.material_color << std::dec << " tfx=" << call.texture.function
+                  << " tcc=" << call.texture.alpha_from_texture << " double=" << call.texture.color_double
+                  << " env=0x" << std::hex << call.texture.env_color << std::dec
+                  << " blend=" << call.blend.enabled << " src=" << call.blend.source_factor
+                  << " dst=" << call.blend.destination_factor << " eq=" << call.blend.equation << " fixA=0x"
+                  << std::hex << call.blend.fixed_source << " fixB=0x" << call.blend.fixed_destination << std::dec
+                  << " ztest=" << call.depth.test_enabled << " zwrite=" << call.depth.write_enabled
+                  << " atest=" << call.alpha_test.enabled << " afunc=" << call.alpha_test.function
+                  << " aref=" << call.alpha_test.reference << " fog=" << call.fog.enabled
+                  << " lit=" << call.lighting_enabled << " minf=" << call.texture.min_filter
+                  << " magf=" << call.texture.mag_filter << "\n";
+    }
 
     bool texture_opaque = impl.white_texture.opaque;
     VkDescriptorSet texture_descriptor = impl.white_texture.descriptor;
@@ -7761,7 +7814,11 @@ void VulkanRenderer::read_back_framebuffer(std::uint32_t source, GuestMemory &me
     const std::uint32_t wanted = GuestMemory::canonical(source);
     std::uint32_t found = 0u;
     bool any = false;
+    static const bool trace_readback = std::getenv("MHP3RD_TRACE_FB_TEXTURES") != nullptr;
     for (const auto &[address, target] : impl.targets) {
+        if (trace_readback && GuestMemory::canonical(address) == wanted)
+            std::cout << "[fbtex] frame " << impl.frames << " readback candidate 0x" << std::hex << address << std::dec
+                      << " initialized=" << target.initialized << " words=" << target.guest_words.size() << "\n";
         if (!target.initialized || target.guest_words.empty()) continue;
         const std::uint32_t base = GuestMemory::canonical(address);
         const std::uint32_t bytes = target.stride * kPspHeight * framebuffer_bytes_per_pixel(target.format);
@@ -7776,7 +7833,10 @@ void VulkanRenderer::read_back_framebuffer(std::uint32_t source, GuestMemory &me
     impl.end_pass();
     impl.record_writeback(found);
     Impl::FrameSlot &frame = impl.slots[impl.slot];
-    if (!frame.writeback_in_flight) return;
+    if (!frame.writeback_in_flight) {
+        if (trace_readback) std::cout << "[fbtex] frame " << impl.frames << " readback not recorded\n";
+        return;
+    }
     // Run everything recorded so far and carry on recording afterwards.
     impl.end_gpu_segment(impl.command_buffer);
     vkEndCommandBuffer(impl.command_buffer);
