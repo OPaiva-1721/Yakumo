@@ -2,6 +2,7 @@
 
 #include "psprecomp/sha256.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -88,7 +89,8 @@ namespace {
 // "7d 84 ...", a label in front): every run of 32 hex digits it contains,
 // once separators and 0x prefixes are dropped, is compared with the expected
 // fingerprints. Returns the names found, with their keys.
-std::vector<std::pair<std::string, Key16>> recognise_keys(std::string_view line, const Fingerprints &expected) {
+// The hex digits of a line, with "0x" prefixes dropped.
+std::string hex_digits(std::string_view line) {
     std::string digits;
     for (std::size_t i = 0; i < line.size(); ++i) {
         if (line[i] == '0' && i + 1 < line.size() && (line[i + 1] == 'x' || line[i + 1] == 'X')) {
@@ -97,6 +99,11 @@ std::vector<std::pair<std::string, Key16>> recognise_keys(std::string_view line,
         }
         if (std::isxdigit(static_cast<unsigned char>(line[i]))) digits.push_back(line[i]);
     }
+    return digits;
+}
+
+std::vector<std::pair<std::string, Key16>> recognise_keys(std::string_view line, const Fingerprints &expected) {
+    const std::string digits = hex_digits(line);
     std::vector<std::pair<std::string, Key16>> found;
     for (std::size_t start = 0; start + 32u <= digits.size(); ++start) {
         const auto key = parse_key(std::string_view(digits).substr(start, 32u));
@@ -141,6 +148,21 @@ KeysFile KeysFile::parse(std::string_view text, const Fingerprints &expected) {
     for (auto &[name, problem] : named_problems)
         if (file.keys_.count(name) == 0u) file.problems_.push_back(std::move(problem));
     return file;
+}
+
+std::vector<Key16> all_keys_in(std::string_view text) {
+    std::vector<Key16> keys;
+    std::istringstream in{std::string(text)};
+    std::string line;
+    while (std::getline(in, line)) {
+        if (const auto hash = line.find('#'); hash != std::string::npos) line.erase(hash);
+        const std::string digits = hex_digits(line);
+        for (std::size_t start = 0; start + 32u <= digits.size(); ++start) {
+            const auto key = parse_key(std::string_view(digits).substr(start, 32u));
+            if (key && std::find(keys.begin(), keys.end(), *key) == keys.end()) keys.push_back(*key);
+        }
+    }
+    return keys;
 }
 
 KeysFile KeysFile::load(const std::filesystem::path &path, const Fingerprints &expected) {

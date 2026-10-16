@@ -2,6 +2,7 @@
 
 #include "app_paths.hpp"
 
+#include "crypto/keys_file.hpp"
 #include "install/executable_preparation.hpp"
 #include "psprecomp/common.hpp"
 #include "install/game_identity.hpp"
@@ -27,6 +28,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <system_error>
 #include <vector>
 
@@ -252,13 +254,21 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
     if (!supplied.empty()) {
         std::filesystem::copy_file(supplied, executable_partial, std::filesystem::copy_options::overwrite_existing);
     } else {
+        std::vector<pgd::Key16> keys;
+        {
+            std::ifstream in(data_dir / "keys.txt");
+            std::ostringstream text;
+            text << in.rdbuf();
+            keys = pgd::all_keys_in(text.str());
+        }
         std::vector<std::uint8_t> executable;
         try {
-            executable = prepare_executable(
-                inspection.eboot_bin, [&](std::uint64_t done, std::uint64_t total) { progress(stage, done, total); });
-        } catch (const psprecomp::Error &) {
-            throw InstallError("This disc's EBOOT.BIN cannot be decrypted here. Choose the disc image together "
-                               "with the EBOOT.ELF that PPSSPP dumps from it (and keys.txt).");
+            executable = prepare_executable(inspection.eboot_bin, keys,
+                [&](std::uint64_t done, std::uint64_t total) { progress(stage, done, total); });
+        } catch (const MissingTagKey &) {
+            throw InstallError("keys.txt does not hold the key this disc's EBOOT.BIN needs (its tag is "
+                               "0xD91613F0). Add it to keys.txt and choose the disc image with keys.txt again, "
+                               "or choose the EBOOT.ELF that PPSSPP dumps from the game with them.");
         }
         write_file(executable_partial, executable);
     }

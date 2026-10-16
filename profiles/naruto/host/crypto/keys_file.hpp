@@ -51,6 +51,11 @@ private:
     bool found_{};
 };
 
+// Every 16-byte value written in hex anywhere in the text (32 hex digits in a
+// row, "0x" prefixes and separators between them ignored), in order, without
+// repeats. Setup tries them where it cannot know a key's name or fingerprint.
+[[nodiscard]] std::vector<Key16> all_keys_in(std::string_view text);
+
 // The keys file the host's I/O uses, read once on first use and checked
 // against console_fingerprints() unless a test replaces them first.
 void set_host_keys_path(const std::filesystem::path &path);

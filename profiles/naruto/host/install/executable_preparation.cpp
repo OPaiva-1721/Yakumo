@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <optional>
 #include <string>
 
 namespace mhp3rd::install {
@@ -37,12 +38,11 @@ constexpr std::size_t kFileTypeOffset = 0x7Cu;    // 9: UMD game executable
 constexpr std::size_t kPayloadSizeOffset = 0xB0u; // size of the encrypted payload
 constexpr std::size_t kTagOffset = 0xD0u;
 
-constexpr std::uint32_t kSupportedTag = 0xD9160BF0u;
+// This disc's tag. Its key is not shipped: it comes from the player's keys
+// file, where setup tries each key until one yields the expected executable.
+constexpr std::uint32_t kSupportedTag = 0xD91613F0u;
 constexpr std::uint8_t kUmdGameExecutable = 9u;
 
-// Key selected by kSupportedTag, from the public PSP key tables.
-constexpr Block kTagKey = {
-    0x83, 0x83, 0xF1, 0x37, 0x53, 0xD0, 0xBE, 0xFC, 0x8D, 0xA7, 0x32, 0x52, 0x46, 0x0A, 0xC2, 0xC2};
 // Crypto-engine key slot 0x5D (plain AES decryption, command 7), which this tag
 // uses for the header.
 constexpr Block kHeaderKey = {
@@ -84,10 +84,10 @@ void append(
 
 // The tag key, repeated over nine blocks that each carry their own index in
 // their first byte, decrypted with the header key.
-std::vector<std::uint8_t> derive_mask() {
+std::vector<std::uint8_t> derive_mask(const Block &tag_key) {
     std::vector<std::uint8_t> mask;
     for (std::uint8_t index = 0; index < 9u; ++index) {
-        Block block = kTagKey;
+        Block block = tag_key;
         block[0] = index;
         mask.insert(mask.end(), block.begin(), block.end());
     }
@@ -96,7 +96,7 @@ std::vector<std::uint8_t> derive_mask() {
 }
 
 // Recovers the payload key from the header.
-Block unwrap_payload_key(std::span<const std::uint8_t> header) {
+Block unwrap_payload_key(std::span<const std::uint8_t> header, const Block &tag_key) {
     // Four header fields form one 0x60-byte encrypted record. Decrypted, it
     // holds a check value and the header's hash, followed from offset 0x24 by
     // the payload key still wrapped under the fixed key and masked.
@@ -107,7 +107,7 @@ Block unwrap_payload_key(std::span<const std::uint8_t> header) {
     append(record, header, 0xC0u, 0x0Cu);
     cbc_decrypt(kHeaderKey, record);
 
-    const std::vector<std::uint8_t> mask = derive_mask();
+    const std::vector<std::uint8_t> mask = derive_mask(tag_key);
     Block key = block_at(record, 0x24u);
     xor_into(key, std::span(mask).subspan(0x10u, 16u));
     cbc_decrypt(kHeaderKey, key);
@@ -118,8 +118,9 @@ Block unwrap_payload_key(std::span<const std::uint8_t> header) {
 
 } // namespace
 
-std::vector<std::uint8_t> prepare_executable(
-    std::span<const std::uint8_t> eboot_bin, const std::function<void(std::uint64_t, std::uint64_t)> &progress) {
+std::vector<std::uint8_t> prepare_executable(std::span<const std::uint8_t> eboot_bin,
+    std::span<const std::array<std::uint8_t, 16>> tag_key_candidates,
+    const std::function<void(std::uint64_t, std::uint64_t)> &progress) {
     if (psprecomp::sha256_bytes(eboot_bin) != kEncryptedExecutableSha256)
         throw psprecomp::Error(
             "EBOOT.BIN is not the supported executable of " + std::string(kGameTitle) + " (" + kDiscIdDisplay + ")");
@@ -135,7 +136,19 @@ std::vector<std::uint8_t> prepare_executable(
     if (size == 0u || size != read_le32(eboot_bin, kImageSizeOffset) || padded_size > eboot_bin.size() - kHeaderSize)
         throw psprecomp::Error("EBOOT.BIN has an unexpected payload size");
 
-    const Block key = unwrap_payload_key(eboot_bin.first(kHeaderSize));
+    // The right tag key is the one whose payload starts with an ELF header;
+    // the hash at the end confirms it.
+    std::optional<Block> key;
+    for (const Block &tag_key : tag_key_candidates) {
+        const Block candidate = unwrap_payload_key(eboot_bin.first(kHeaderSize), tag_key);
+        Block first = block_at(eboot_bin, kHeaderSize);
+        cbc_decrypt(candidate, first);
+        if (first[0] == 0x7Fu && first[1] == 'E' && first[2] == 'L' && first[3] == 'F') {
+            key = candidate;
+            break;
+        }
+    }
+    if (!key) throw MissingTagKey();
     std::vector<std::uint8_t> executable(
         eboot_bin.begin() + kHeaderSize, eboot_bin.begin() + static_cast<std::ptrdiff_t>(kHeaderSize + padded_size));
     // CBC carries its chaining value in the context, so the payload decrypts
@@ -143,7 +156,7 @@ std::vector<std::uint8_t> prepare_executable(
     constexpr std::size_t kSlice = 1024u * 1024u;
     const Block zero_iv{};
     AES_ctx context{};
-    AES_init_ctx_iv(&context, key.data(), zero_iv.data());
+    AES_init_ctx_iv(&context, key->data(), zero_iv.data());
     for (std::size_t offset = 0; offset < executable.size(); offset += kSlice) {
         const std::size_t length = std::min(kSlice, executable.size() - offset);
         AES_CBC_decrypt_buffer(&context, executable.data() + offset, length);

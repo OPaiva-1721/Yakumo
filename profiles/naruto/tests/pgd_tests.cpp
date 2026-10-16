@@ -202,6 +202,24 @@ int main() {
               mhp3rd::pgd::console_fingerprints().count("amctrl.1cf4") == 1u,
           "the console fingerprints cover the six PGD keys");
 
+    // Setup tries every key in the file for the EBOOT.BIN tag key, which has
+    // no name or fingerprint here.
+    {
+        const auto keys = mhp3rd::pgd::all_keys_in("kirk.aes.38 = 0102030405060708090A0B0C0D0E0F10\n"
+                                                   "# 1111111111111111111111111111111111111111\n"
+                                                   "{ 0x9C, 0xA3, 0xAA, 0xB1, 0xB8, 0xBF, 0xC6, 0xCD, 0xD4, 0xDB, "
+                                                   "0xE2, 0xE9, 0xF0, 0xF7, 0xFE, 0x05 }\n"
+                                                   "again 0102030405060708090A0B0C0D0E0F10\n");
+        // A window over the digits of a name ("38") also reads as a key;
+        // a wrong candidate only costs setup one more try.
+        const auto has = [&keys](std::uint8_t first, std::uint8_t last) {
+            return std::count_if(keys.begin(), keys.end(),
+                       [&](const mhp3rd::pgd::Key16 &k) { return k[0] == first && k[15] == last; }) == 1;
+        };
+        check(has(0x01u, 0x10u) && has(0x9Cu, 0x05u) && !has(0x11u, 0x11u),
+              "every key written in the file is listed once, comments skipped");
+    }
+
     if (g_failures != 0) std::printf("%d failed\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }
