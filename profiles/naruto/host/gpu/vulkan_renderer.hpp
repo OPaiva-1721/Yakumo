@@ -158,6 +158,13 @@ public:
     // writes that framebuffer back to guest memory, so the copy gets the
     // picture. Waits for the GPU. MHP3RD_NO_FB_TEXTURES turns it off.
     void read_back_framebuffer(std::uint32_t source, GuestMemory &memory);
+    // A GE block transfer between a render target and memory the game then
+    // textures from, done on the GPU instead of through guest memory: out of a
+    // target into an image of its own that later draws sample, or such an
+    // image back into a target. False when the transfer is not one of those;
+    // the caller then copies guest memory as before. MHP3RD_NO_GPU_TRANSFERS
+    // turns it off.
+    [[nodiscard]] bool gpu_block_transfer(const BlockTransfer &transfer, const GuestMemory &memory);
     // Ends the frame and shows the target the guest just flipped to. Draws go to
     // a separate offscreen target per guest framebuffer address, so only the
     // displayed one reaches the window. `moment` is the real time the flip's

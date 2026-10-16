@@ -1317,6 +1317,32 @@ struct VulkanRenderer::Impl {
         bool copy_valid{};
     };
     std::map<std::uint32_t, Target> targets;
+    // GE block transfers out of a render target done on the GPU
+    // (gpu_block_transfer): the copied pixels as an image of their own, by the
+    // canonical guest address of their first pixel, for the draws that texture
+    // from that address. Guest memory there is left as it was; the words
+    // sampled when the copy was made tell when the game has put something else
+    // there. Reading the target back instead stalls the CPU on the GPU, three
+    // times a frame for Naruto's distance blur.
+    struct GpuCopy {
+        VkImage image{};
+        VkDeviceMemory memory{};
+        VkImageView view{};
+        VkDescriptorSet descriptor{};
+        std::uint32_t width{}; // guest pixels
+        std::uint32_t height{};
+        std::uint32_t image_width{}; // image pixels, at the internal scale
+        std::uint32_t image_height{};
+        std::uint32_t stride{};
+        std::uint32_t bytes_per_pixel{};
+        bool valid{};
+        std::vector<std::uint32_t> guest_words;
+    };
+    std::map<std::uint32_t, GpuCopy> gpu_copies;
+    void destroy_gpu_copy(GpuCopy &copy);
+    void destroy_gpu_copies();
+    [[nodiscard]] const GpuCopy *find_gpu_copy(const GuestMemory &memory, const TextureState &texture) const;
+    [[nodiscard]] Target *target_holding(std::uint32_t address, std::uint32_t &base);
     // Write-back of the displayed framebuffer to guest VRAM (write_back_frame):
     // present() scales the target to 480x272 and copies it into a mapped
     // buffer; begin_frame(), after the frame fence, takes the pixels; the next
@@ -6332,6 +6358,8 @@ void VulkanRenderer::Impl::resize_targets(VkExtent2D extent) {
     }
     std::map<std::uint32_t, Target> old_targets = std::move(targets);
     targets.clear();
+    // Copies made at the old size; the game makes them again every frame.
+    destroy_gpu_copies();
     const VkExtent2D old_extent = target_extent;
     target_extent = extent;
     std::vector<std::pair<Target *, const Target *>> copies;
@@ -7317,7 +7345,12 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     // target: the pixels never reach guest memory, which holds whatever was
     // there before. MHP3RD_NO_FB_TEXTURES decodes guest memory as before.
     static const bool no_fb_textures = std::getenv("MHP3RD_NO_FB_TEXTURES") != nullptr;
-    const Impl::FramebufferTexture framebuffer_source = call.texture.enabled && !call.clear_mode && !no_fb_textures
+    // Pixels a block transfer copied out of a render target on the GPU.
+    const Impl::GpuCopy *gpu_copy = call.texture.enabled && !call.clear_mode && !no_fb_textures
+        ? impl.find_gpu_copy(memory, call.texture)
+        : nullptr;
+    const Impl::FramebufferTexture framebuffer_source =
+        call.texture.enabled && !call.clear_mode && !no_fb_textures && gpu_copy == nullptr
         ? impl.find_framebuffer_texture(memory, call.texture)
         : Impl::FramebufferTexture{};
 
@@ -7330,7 +7363,7 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     // background) belong with the 3D view and stay spread.
     float fit_x = 1.0f, fit_y = 1.0f;
     bool fitted = false;
-    if (call.through && !call.clear_mode && framebuffer_source.target == nullptr &&
+    if (call.through && !call.clear_mode && framebuffer_source.target == nullptr && gpu_copy == nullptr &&
         impl.shows(call.target.color_address) && impl.interface_fit(fit_x, fit_y)) {
         float left = impl.scratch.front().x, right = left;
         for (const GpuVertex &vertex : impl.scratch) {
@@ -7544,7 +7577,8 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     VkDescriptorSet texture_descriptor = impl.white_texture.descriptor;
     if (call.texture.enabled && !call.clear_mode) {
         const Impl::FramebufferTexture &source = framebuffer_source;
-        const VkDescriptorSet copy = source.target != nullptr
+        const VkDescriptorSet copy = gpu_copy != nullptr ? gpu_copy->descriptor
+            : source.target != nullptr
             ? impl.framebuffer_descriptor(*source.target, call.texture.format == TextureFormat::Rgba5650)
             : VK_NULL_HANDLE;
         if (copy != VK_NULL_HANDLE) {
@@ -7553,14 +7587,19 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
             // any internal scale.
             texture_descriptor = copy;
             // The RGB565 view explicitly supplies ONE for sampled alpha.
-            texture_opaque = call.texture.format == TextureFormat::Rgba5650;
+            texture_opaque = gpu_copy == nullptr && call.texture.format == TextureFormat::Rgba5650;
             const float width = static_cast<float>(call.texture.width);
             const float height = static_cast<float>(call.texture.height);
             const std::array<float, 4> uv = push.uv_transform;
-            push.uv_transform = {uv[0] * width / static_cast<float>(kPspWidth),
-                uv[1] * height / static_cast<float>(kPspHeight),
-                (uv[2] * width + static_cast<float>(source.x)) / static_cast<float>(kPspWidth),
-                (uv[3] * height + static_cast<float>(source.y)) / static_cast<float>(kPspHeight)};
+            // A GPU copy holds its own pixels from (0, 0); a target the whole
+            // 480x272 screen, the texture starting at (x, y) in it.
+            const float span_x = gpu_copy != nullptr ? static_cast<float>(gpu_copy->width) : static_cast<float>(kPspWidth);
+            const float span_y =
+                gpu_copy != nullptr ? static_cast<float>(gpu_copy->height) : static_cast<float>(kPspHeight);
+            const float origin_x = gpu_copy != nullptr ? 0.0f : static_cast<float>(source.x);
+            const float origin_y = gpu_copy != nullptr ? 0.0f : static_cast<float>(source.y);
+            push.uv_transform = {uv[0] * width / span_x, uv[1] * height / span_y,
+                (uv[2] * width + origin_x) / span_x, (uv[3] * height + origin_y) / span_y};
         } else {
             texture_descriptor = impl.texture_descriptor(memory, call, texture_opaque);
             // The 2D interface's textures sampled sharp bilinear (ge.frag),
@@ -7805,6 +7844,215 @@ void VulkanRenderer::write_back_frame(GuestMemory &memory) {
     const perf::Clock::time_point store_start = perf::Clock::now();
     impl.store_frame(memory, impl.writeback_ready, impl.writeback_pixels.data());
     perf::note_stall(perf::Stall::Store, perf::Clock::now() - store_start);
+}
+
+void VulkanRenderer::Impl::destroy_gpu_copy(GpuCopy &copy) {
+    texture_sets.free(copy.descriptor);
+    vkDestroyImageView(device, copy.view, nullptr);
+    vkDestroyImage(device, copy.image, nullptr);
+    vkFreeMemory(device, copy.memory, nullptr);
+    copy = GpuCopy{};
+}
+
+void VulkanRenderer::Impl::destroy_gpu_copies() {
+    for (auto &[address, copy] : gpu_copies) destroy_gpu_copy(copy);
+    gpu_copies.clear();
+}
+
+// The initialized render target whose guest buffer holds `address`, with the
+// canonical address of its first pixel.
+VulkanRenderer::Impl::Target *VulkanRenderer::Impl::target_holding(std::uint32_t address, std::uint32_t &base) {
+    const std::uint32_t wanted = GuestMemory::canonical(address);
+    for (auto &[target_address, target] : targets) {
+        if (!target.initialized) continue;
+        const std::uint32_t start = GuestMemory::canonical(target_address);
+        const std::uint32_t bytes = target.stride * kPspHeight * framebuffer_bytes_per_pixel(target.format);
+        if (wanted >= start && wanted - start < bytes) {
+            base = start;
+            return &target;
+        }
+    }
+    return nullptr;
+}
+
+namespace {
+
+// Two guest words from each row of a rectangle: enough to notice the game
+// putting other pixels there, for little reading.
+std::vector<std::uint32_t> sample_rows(const GuestMemory &memory, std::uint32_t address, std::uint32_t stride,
+    std::uint32_t width, std::uint32_t height, std::uint32_t bytes_per_pixel) {
+    std::vector<std::uint32_t> words;
+    words.reserve(static_cast<std::size_t>(height) * 2u);
+    const std::uint32_t middle = (width * bytes_per_pixel / 2u) & ~3u;
+    for (std::uint32_t row = 0; row < height; ++row) {
+        const std::uint32_t line = address + row * stride * bytes_per_pixel;
+        for (const std::uint32_t at : {line, line + middle})
+            words.push_back(memory.contains(at, 4u) ? memory.load32(at) : 0u);
+    }
+    return words;
+}
+
+} // namespace
+
+const VulkanRenderer::Impl::GpuCopy *VulkanRenderer::Impl::find_gpu_copy(
+    const GuestMemory &memory, const TextureState &texture) const {
+    if (gpu_copies.empty() || texture.swizzled) return nullptr;
+    const auto found = gpu_copies.find(GuestMemory::canonical(texture.address));
+    if (found == gpu_copies.end() || !found->second.valid) return nullptr;
+    const GpuCopy &copy = found->second;
+    if (texture_bits_per_pixel(texture.format) != copy.bytes_per_pixel * 8u || texture.buffer_width != copy.stride)
+        return nullptr;
+    if (sample_rows(memory, found->first, copy.stride, copy.width, copy.height, copy.bytes_per_pixel) !=
+        copy.guest_words)
+        return nullptr;
+    return &copy;
+}
+
+bool VulkanRenderer::gpu_block_transfer(const BlockTransfer &transfer, const GuestMemory &memory) {
+    Impl &impl = *impl_;
+    static const bool disabled =
+        std::getenv("MHP3RD_NO_GPU_TRANSFERS") != nullptr || std::getenv("MHP3RD_NO_FB_TEXTURES") != nullptr;
+    if (!impl.ready || disabled || transfer.width == 0u || transfer.height == 0u) return false;
+    const std::uint32_t bpp = transfer.bytes_per_pixel;
+    const std::uint32_t source_first = GuestMemory::canonical(
+        transfer.source + (transfer.source_y * transfer.source_stride + transfer.source_x) * bpp);
+    const std::uint32_t destination_first = GuestMemory::canonical(transfer.destination +
+        (transfer.destination_y * transfer.destination_stride + transfer.destination_x) * bpp);
+    const float scale_x = static_cast<float>(impl.target_extent.width) / static_cast<float>(kPspWidth);
+    const float scale_y = static_cast<float>(impl.target_extent.height) / static_cast<float>(kPspHeight);
+    const auto scaled = [](std::uint32_t value, float scale) {
+        return static_cast<std::int32_t>(std::lround(static_cast<float>(value) * scale));
+    };
+    static const bool trace = std::getenv("MHP3RD_TRACE_FB_TEXTURES") != nullptr;
+
+    std::uint32_t destination_base = 0u;
+    Impl::Target *destination_target = impl.target_holding(destination_first, destination_base);
+
+    // Pixels copied out on the GPU before, put back into a render target (the
+    // corner Naruto borrows for its blur, restored): image to target.
+    if (destination_target != nullptr) {
+        const auto found = impl.gpu_copies.find(source_first);
+        if (found == impl.gpu_copies.end() || !found->second.valid) return false;
+        Impl::GpuCopy &copy = found->second;
+        if (bpp != copy.bytes_per_pixel || transfer.source_stride != copy.stride ||
+            transfer.width > copy.width || transfer.height > copy.height ||
+            framebuffer_bytes_per_pixel(destination_target->format) != bpp ||
+            transfer.destination_stride != destination_target->stride ||
+            sample_rows(memory, source_first, copy.stride, copy.width, copy.height, bpp) != copy.guest_words)
+            return false;
+        const std::uint32_t pixel = (destination_first - destination_base) / bpp;
+        const std::uint32_t x = pixel % destination_target->stride;
+        const std::uint32_t y = pixel / destination_target->stride;
+        if (x + transfer.width > kPspWidth || y + transfer.height > kPspHeight) return false;
+        if (!impl.recording) begin_frame();
+        impl.end_pass();
+        VkCommandBuffer commands = impl.command_buffer;
+        impl.transition(commands, copy.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        impl.transition(commands, destination_target->color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        VkImageBlit blit{};
+        blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+        blit.srcOffsets[1] = {scaled(transfer.width, scale_x), scaled(transfer.height, scale_y), 1};
+        blit.dstSubresource = blit.srcSubresource;
+        blit.dstOffsets[0] = {scaled(x, scale_x), scaled(y, scale_y), 0};
+        blit.dstOffsets[1] = {scaled(x + transfer.width, scale_x), scaled(y + transfer.height, scale_y), 1};
+        vkCmdBlitImage(commands, copy.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination_target->color,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &blit, VK_FILTER_NEAREST);
+        impl.transition(commands, destination_target->color, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        impl.transition(commands, copy.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ++destination_target->draw_serial;
+        perf::count_target_copy();
+        if (trace)
+            std::cout << "[fbtex] frame " << impl.frames << " gpu copy 0x" << std::hex << source_first << " -> 0x"
+                      << destination_first << std::dec << " " << transfer.width << "x" << transfer.height << "\n";
+        return true;
+    }
+
+    // A render target copied out to memory that is not one: target to image.
+    std::uint32_t source_base = 0u;
+    Impl::Target *source = impl.target_holding(source_first, source_base);
+    if (source == nullptr || framebuffer_bytes_per_pixel(source->format) != bpp ||
+        transfer.source_stride != source->stride)
+        return false;
+    const std::uint32_t pixel = (source_first - source_base) / bpp;
+    const std::uint32_t x = pixel % source->stride;
+    const std::uint32_t y = pixel / source->stride;
+    if (x + transfer.width > kPspWidth || y + transfer.height > kPspHeight) return false;
+    if (!memory.contains(destination_first,
+            (transfer.height - 1u) * transfer.destination_stride * bpp + transfer.width * bpp))
+        return false;
+
+    const auto image_width = static_cast<std::uint32_t>(std::max(1, scaled(transfer.width, scale_x)));
+    const auto image_height = static_cast<std::uint32_t>(std::max(1, scaled(transfer.height, scale_y)));
+    Impl::GpuCopy &copy = impl.gpu_copies[destination_first];
+    if (copy.image != VK_NULL_HANDLE && (copy.image_width != image_width || copy.image_height != image_height)) {
+        // The frame being recorded may still sample the old image.
+        vkQueueWaitIdle(impl.queue);
+        impl.destroy_gpu_copy(copy);
+    }
+    if (copy.image == VK_NULL_HANDLE) {
+        std::string error;
+        if (!impl.create_image(image_width, image_height, VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                copy.image, copy.memory, copy.view, VK_IMAGE_ASPECT_COLOR_BIT, error)) {
+            std::cout << "[render] cannot copy a framebuffer on the GPU: " << error << "\n";
+            impl.destroy_gpu_copy(copy);
+            impl.gpu_copies.erase(destination_first);
+            return false;
+        }
+        copy.descriptor = impl.texture_sets.allocate(error);
+        if (copy.descriptor == VK_NULL_HANDLE) {
+            impl.report_descriptor_failure(error);
+            impl.destroy_gpu_copy(copy);
+            impl.gpu_copies.erase(destination_first);
+            return false;
+        }
+        VkDescriptorImageInfo image_info{
+            impl.framebuffer_sampler(), copy.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = copy.descriptor;
+        write.descriptorCount = 1u;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &image_info;
+        vkUpdateDescriptorSets(impl.device, 1u, &write, 0u, nullptr);
+        copy.image_width = image_width;
+        copy.image_height = image_height;
+    }
+
+    if (!impl.recording) begin_frame();
+    impl.end_pass();
+    VkCommandBuffer commands = impl.command_buffer;
+    impl.transition(commands, source->color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    impl.transition(commands, copy.image,
+        copy.valid ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageBlit blit{};
+    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    blit.srcOffsets[0] = {scaled(x, scale_x), scaled(y, scale_y), 0};
+    blit.srcOffsets[1] = {scaled(x + transfer.width, scale_x), scaled(y + transfer.height, scale_y), 1};
+    blit.dstSubresource = blit.srcSubresource;
+    blit.dstOffsets[1] = {static_cast<std::int32_t>(image_width), static_cast<std::int32_t>(image_height), 1};
+    vkCmdBlitImage(commands, source->color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, copy.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &blit, VK_FILTER_NEAREST);
+    impl.transition(commands, copy.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    impl.transition(commands, source->color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    perf::count_target_copy();
+    copy.width = transfer.width;
+    copy.height = transfer.height;
+    copy.stride = transfer.destination_stride;
+    copy.bytes_per_pixel = bpp;
+    copy.valid = true;
+    copy.guest_words = sample_rows(memory, destination_first, copy.stride, copy.width, copy.height, bpp);
+    if (trace)
+        std::cout << "[fbtex] frame " << impl.frames << " gpu copy 0x" << std::hex << source_first << " -> 0x"
+                  << destination_first << std::dec << " " << transfer.width << "x" << transfer.height << "\n";
+    return true;
 }
 
 void VulkanRenderer::read_back_framebuffer(std::uint32_t source, GuestMemory &memory) {
@@ -9187,6 +9435,7 @@ void VulkanRenderer::shutdown() {
     vkDestroyShaderModule(impl.device, impl.plain_fragment_shader, nullptr);
     for (auto &[address, target] : impl.targets) impl.destroy_target(target);
     impl.targets.clear();
+    impl.destroy_gpu_copies();
     impl.destroy_target(impl.held);
     impl.held = {};
     impl.holding = false;

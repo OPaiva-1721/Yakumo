@@ -136,8 +136,14 @@ MediaState &media() {
 void block_transfer(Runtime &rt, const gpu::BlockTransfer &transfer) {
     psprecomp::GuestMemory &memory = rt.memory();
 #if defined(MHP3RD_HAS_RENDERER)
-    if (media().renderer && media().renderer->available())
+    if (media().renderer && media().renderer->available()) {
+        // Out of a framebuffer into a texture, or back: on the GPU, with no wait.
+        if (media().renderer->gpu_block_transfer(transfer, memory)) {
+            media().renderer->begin_display_list();
+            return;
+        }
         media().renderer->read_back_framebuffer(transfer.source, memory);
+    }
 #endif
     const std::size_t row_bytes = static_cast<std::size_t>(transfer.width) * transfer.bytes_per_pixel;
     for (std::uint32_t row = 0; row < transfer.height; ++row) {
