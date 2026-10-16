@@ -1079,6 +1079,20 @@ struct VulkanRenderer::Impl {
     input::touch::Insets touch_insets{};
     settings::TouchLayout touch_mode{settings::TouchLayout::Psp};
     bool touch_visible{};
+    // The fight layout follows what the game shows: a frame of 3D (a fight,
+    // the field) brings it up, a frame of 2D only (menus, dialogs, the world
+    // map) the PSP layout with its D-pad. Ten frames in a row change it, so a
+    // fade or a single 2D frame does not.
+    static constexpr std::uint32_t kSceneDraws = 30u;
+    static constexpr std::uint32_t kSceneFrames = 10u;
+    bool scene_3d{};
+    std::uint32_t scene_streak{};
+    // Fingers on the screen and the last time one moved: the controls fade
+    // out after kTouchIdleMs without a touch and come back with the next.
+    static constexpr std::uint64_t kTouchIdleMs = 4000u;
+    static constexpr std::uint64_t kTouchFadeMs = 600u;
+    int fingers_down{};
+    std::uint64_t last_touch_ms{};
     bool real_mouse_seen{};
     MouseMotion touch_motion{};
     struct TouchLayoutKey {
@@ -1093,12 +1107,13 @@ struct VulkanRenderer::Impl {
         int height = 0;
         if (window == nullptr || !SDL_GetWindowSize(window, &width, &height) || width <= 0 || height <= 0) return;
         const settings::Settings &player = settings::current();
-        if (touch_mode != player.touch_layout) {
+        const settings::TouchLayout effective = action_layout() ? settings::TouchLayout::Action : settings::TouchLayout::Psp;
+        if (touch_mode != effective) {
             touch.release_all();
             action_touch.release_all();
             touch_resolver.reset();
             lock_on_touch_tap = {};
-            touch_mode = player.touch_layout;
+            touch_mode = effective;
         }
         const float size = player.touch_size;
         const bool dpad = player.touch_dpad;
@@ -1139,8 +1154,16 @@ struct VulkanRenderer::Impl {
         action_touch.set_layout(player.touch_action,
             input::touch::safe_area(static_cast<float>(width), static_cast<float>(height), touch_insets), size);
     }
-    [[nodiscard]] static bool action_layout() {
-        return settings::current().touch_layout == settings::TouchLayout::Action;
+    // The fight layout when the player chose it and the game shows 3D.
+    [[nodiscard]] bool action_layout() const {
+        return settings::current().touch_layout == settings::TouchLayout::Action && scene_3d;
+    }
+    // How visible the controls are: 1 while touched and for a while after,
+    // then fading to 0.
+    [[nodiscard]] float touch_fade(std::uint64_t now) const {
+        if (fingers_down > 0 || now < last_touch_ms + kTouchIdleMs) return 1.0f;
+        const std::uint64_t idle = now - last_touch_ms - kTouchIdleMs;
+        return idle >= kTouchFadeMs ? 0.0f : 1.0f - static_cast<float>(idle) / static_cast<float>(kTouchFadeMs);
     }
     [[nodiscard]] bool touch_r3_held() const {
         return action_layout() ? action_touch.held(input::touch::Element::R3) : touch.held(input::touch::Control::R3);
@@ -1174,7 +1197,13 @@ struct VulkanRenderer::Impl {
         const input::touch::Point at{
             event.tfinger.x * static_cast<float>(width), event.tfinger.y * static_cast<float>(height)};
         const std::uint64_t id = event.tfinger.fingerID;
-        if (event.type == SDL_EVENT_FINGER_DOWN) touch_visible = true;
+        if (event.type == SDL_EVENT_FINGER_DOWN) {
+            touch_visible = true;
+            ++fingers_down;
+        } else if (event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED) {
+            fingers_down = std::max(0, fingers_down - 1);
+        }
+        last_touch_ms = SDL_GetTicks();
         input::touch::Point drag;
         const bool r3_before = touch_r3_held();
         if (action_layout()) {
@@ -6098,7 +6127,7 @@ void VulkanRenderer::Impl::sample_pad(bool focused) {
         read_gamepad(impl_->gamepad, impl_->mapped, pad, analog_x, analog_y);
     // So do the on-screen controls.
     if (impl_->touch_visible) {
-        const bool action = Impl::action_layout();
+        const bool action = impl_->action_layout();
         pad.buttons |= action ? impl_->action_touch.buttons(SDL_GetTicks()) : impl_->touch.buttons();
         const input::touch::Point stick = action ? impl_->action_touch.stick() : impl_->touch.stick();
         analog_x += static_cast<int>(std::lround(stick.x * 127.0f));
@@ -6164,6 +6193,14 @@ bool VulkanRenderer::take_touch_menu() noexcept {
     const bool psp = impl_->touch.take_menu();
     const bool action = impl_->action_touch.take_menu();
     return psp || action;
+}
+
+bool VulkanRenderer::action_touch_active() const noexcept {
+    return impl_ && impl_->action_layout();
+}
+
+float VulkanRenderer::touch_fade() const noexcept {
+    return impl_ ? impl_->touch_fade(SDL_GetTicks()) : 1.0f;
 }
 
 const input::touch::ActionControls &VulkanRenderer::action_touch_controls() const {
@@ -9089,6 +9126,14 @@ bool VulkanRenderer::present(
         }
     }
     impl.frame_views.clear();
+    {
+        const bool now_3d = impl.frame_transformed_draws >= Impl::kSceneDraws;
+        impl.scene_streak = now_3d != impl.scene_3d ? impl.scene_streak + 1u : 0u;
+        if (impl.scene_streak >= Impl::kSceneFrames) {
+            impl.scene_3d = now_3d;
+            impl.scene_streak = 0u;
+        }
+    }
     impl.frame_through_draws = 0u;
     impl.frame_transformed_draws = 0u;
     impl.frame_transformed_vertices = 0u;

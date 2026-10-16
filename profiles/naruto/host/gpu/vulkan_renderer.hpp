@@ -124,6 +124,12 @@ public:
     // The action layout's controls (#174), which take the fingers instead
     // while settings choose that layout.
     [[nodiscard]] const input::touch::ActionControls &action_touch_controls() const;
+    // Whether the fight layout is the one in use now: the player chose it and
+    // the game is showing 3D (otherwise the PSP layout, with its D-pad).
+    [[nodiscard]] bool action_touch_active() const noexcept;
+    // How visible the on-screen controls are, 0-1: they fade out a while
+    // after the last touch.
+    [[nodiscard]] float touch_fade() const noexcept;
     // A camera drag on the touch screen since the last take, as a fraction of
     // the screen's height.
     [[nodiscard]] MouseMotion take_touch_motion() noexcept;

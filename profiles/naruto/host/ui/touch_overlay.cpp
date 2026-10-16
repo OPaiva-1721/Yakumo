@@ -306,7 +306,10 @@ void draw_action_controls(const input::touch::ActionControls &controls, float op
         look.opacity = opacity;
         look.held = controls.held(element);
         if (element == Element::Swipe) look.swipe = controls.swipe_shown(ms);
-        draw_action_element(list, element, placement, controls.placed(element), controls.stick_thumb(), look);
+        // A floating stick is drawn where the thumb took it.
+        input::touch::Placed placed = controls.placed(element);
+        if (element == Element::Stick) placed.centre = controls.stick_centre();
+        draw_action_element(list, element, placement, placed, controls.stick_thumb(), look);
     }
 }
 

@@ -144,6 +144,12 @@ public:
     // The stick, each axis -1..1, right and down positive.
     [[nodiscard]] Point stick() const;
     [[nodiscard]] Point stick_thumb() const { return stick_thumb_; }
+    // Where the stick is drawn and measured from: where the finger landed
+    // while a floating stick is held, its placement otherwise.
+    [[nodiscard]] Point stick_centre() const;
+    // A floating stick: a finger landing free on the left part of the screen
+    // takes the stick there, not only one landing on the stick.
+    void set_floating_stick(bool floating) { floating_stick_ = floating; }
     [[nodiscard]] bool stick_held() const { return stick_finger_.has_value(); }
     [[nodiscard]] bool held(Element element) const;
     // Camera drag since the last take, in pixels.
@@ -182,6 +188,8 @@ private:
     std::array<Finger, kFingers> fingers_{};
     std::optional<std::uint64_t> stick_finger_;
     Point stick_thumb_{};
+    std::optional<Point> stick_origin_;
+    bool floating_stick_{true};
     Point camera_drag_{};
     bool menu_tapped_{};
     int haptics_{};

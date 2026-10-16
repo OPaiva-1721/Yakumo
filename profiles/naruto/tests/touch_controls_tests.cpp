@@ -388,6 +388,26 @@ void test_action_layout() {
         "moving an element puts it where it is dropped, anchored to the nearer edge");
 }
 
+// A finger landing free on the left part of the screen takes the stick there.
+void test_floating_stick() {
+    ActionControls controls;
+    const Area area = safe_area(2000.0f, 1000.0f, {});
+    controls.set_layout(default_action_layout(), area, 1.0f);
+    const Point landing{area.left + area.width * 0.2f, area.top + area.height * 0.2f};
+    controls.finger_down(1, landing, 1000u);
+    check(controls.stick_held() && std::fabs(controls.stick_centre().x - landing.x) < 1e-3f &&
+            std::fabs(controls.stick_centre().y - landing.y) < 1e-3f,
+        "a free finger on the left takes a floating stick where it lands");
+    controls.finger_move(1, {landing.x + controls.placed(Element::Stick).radius, landing.y}, 1010u);
+    check(controls.stick().x > 0.99f, "the floating stick deflects from where it landed");
+    controls.finger_up(1, 1020u);
+    check(!controls.stick_held() && std::fabs(controls.stick_centre().x - controls.placed(Element::Stick).centre.x) < 1e-3f,
+        "released, the stick goes back to its place");
+    controls.set_floating_stick(false);
+    controls.finger_down(2, landing, 1030u);
+    check(!controls.stick_held(), "without floating, a free finger turns the camera");
+}
+
 void test_action_fingers() {
     ActionControls controls;
     const Area area = safe_area(2000.0f, 1000.0f, {});
@@ -479,6 +499,7 @@ int main() {
     test_fingers();
     test_action_layout();
     test_action_fingers();
+    test_floating_stick();
     if (failures != 0) {
         std::cerr << failures << " failure(s)\n";
         return 1;

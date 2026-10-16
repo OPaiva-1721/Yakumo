@@ -2196,10 +2196,13 @@ void draw_over_game() {
     if (flying) draw_free_camera_indicator(free_camera);
     if (touch) {
         const settings::Settings &player = settings::current();
-        if (player.touch_layout == settings::TouchLayout::Action)
-            draw_action_controls(layer.renderer().action_touch_controls(), player.touch_opacity, SDL_GetTicks());
-        else
-            draw_touch_controls(layer.renderer().touch_controls(), player.touch_opacity);
+        const float opacity = player.touch_opacity * layer.renderer().touch_fade();
+        if (opacity > 0.01f) {
+            if (layer.renderer().action_touch_active())
+                draw_action_controls(layer.renderer().action_touch_controls(), opacity, SDL_GetTicks());
+            else
+                draw_touch_controls(layer.renderer().touch_controls(), opacity);
+        }
     }
     if (hint_left > 0.0) draw_hint(hint_left);
     if (!gpu_problem.empty()) draw_gpu_problem(gpu_problem);

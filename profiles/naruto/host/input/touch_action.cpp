@@ -306,6 +306,14 @@ void ActionControls::finger_down(std::uint64_t id, Point at, std::uint64_t ms) {
         slot->role = Role::Stick;
         stick_finger_ = id;
         stick_thumb_ = at;
+        stick_origin_ = stick.centre;
+    } else if (floating_stick_ && layout_.at(Element::Stick).shown && !stick_finger_ && !in_swipe_area(at) &&
+        at.x < area_.left + area_.width * 0.45f) {
+        // A floating stick, centred where the thumb landed.
+        slot->role = Role::Stick;
+        stick_finger_ = id;
+        stick_thumb_ = at;
+        stick_origin_ = at;
     } else if (in_swipe_area(at)) {
         slot->role = Role::Swipe;
     } else {
@@ -376,6 +384,7 @@ void ActionControls::finger_up(std::uint64_t id, std::uint64_t) {
     if (finger->role == Role::Stick) {
         stick_finger_.reset();
         stick_thumb_ = {};
+        stick_origin_.reset();
     }
     *finger = Finger{};
 }
@@ -384,6 +393,7 @@ void ActionControls::release_all() {
     fingers_ = {};
     stick_finger_.reset();
     stick_thumb_ = {};
+    stick_origin_.reset();
     camera_drag_ = {};
     menu_tapped_ = false;
     haptics_ = 0;
@@ -406,10 +416,15 @@ bool ActionControls::held(Element element) const {
     return false;
 }
 
+Point ActionControls::stick_centre() const {
+    return stick_finger_ && stick_origin_ ? *stick_origin_ : placed(Element::Stick).centre;
+}
+
 Point ActionControls::stick() const {
     if (!stick_finger_) return {};
     const Placed &p = placed(Element::Stick);
-    return stick_deflection({stick_thumb_.x - p.centre.x, stick_thumb_.y - p.centre.y}, p.radius);
+    const Point centre = stick_centre();
+    return stick_deflection({stick_thumb_.x - centre.x, stick_thumb_.y - centre.y}, p.radius);
 }
 
 Point ActionControls::take_camera_drag() {
