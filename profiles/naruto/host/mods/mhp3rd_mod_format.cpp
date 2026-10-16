@@ -286,7 +286,7 @@ std::optional<Mod> ModFolderFormat::read(const fs::path &folder) const {
         reader.file_changes(*ini, kInfo, version, FileChange::Kind::Patch);
     } else if (iequals(type, "Code")) {
         mod.type = "Code";
-        reader.unusable("A code mod runs its own PSP code inside the game. Yakumo runs the game as recompiled "
+        reader.unusable("A code mod runs its own PSP code inside the game. Ninja Impact runs the game as recompiled "
                         "native code, so it cannot load these yet.");
     } else if (iequals(type, "Pack")) {
         mod.type = "Pack";

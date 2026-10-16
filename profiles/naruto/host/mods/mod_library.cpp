@@ -89,7 +89,7 @@ bool ModLibrary::save_choices(const fs::path &file, std::string &error) const {
     partial += ".part";
     {
         std::ofstream out(partial, std::ios::trunc);
-        out << "# Written by Yakumo's Mods menu: which mods are on, and their order (a higher rank wins where\n"
+        out << "# Written by Ninja Impact's Mods menu: which mods are on, and their order (a higher rank wins where\n"
                "# two mods change the same file). The mods themselves are folders in the mods folder.\n"
             << "[" << kGeneral << "]\nenabled=" << (master_ ? 1 : 0) << "\n";
         for (const auto &[id, c] : choices_) {

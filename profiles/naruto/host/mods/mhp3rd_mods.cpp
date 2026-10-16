@@ -372,7 +372,7 @@ std::string pending_note() {
     State &s = state();
     if (!s.session) return {};
     if (s.session->restart_pending())
-        return "Restart Yakumo to apply: a file changes size in a way the running game cannot take.";
+        return "Restart Ninja Impact to apply: a file changes size in a way the running game cannot take.";
     if (s.waiting) return "Applies once the game finishes loading the file it is reading.";
     if (s.switched_live)
         return "Applied: each file changes the next time the game loads it, usually at the next area or menu. "

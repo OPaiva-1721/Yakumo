@@ -31,7 +31,7 @@ void check(bool condition, const char *message) {
 void test_names(const fs::path &dir) {
     const auto when = std::chrono::system_clock::now();
     const std::string name = file_name(when);
-    check(name.size() == std::string("Yakumo_2026-09-27_14-03-22.png").size() && name.starts_with("Yakumo_") &&
+    check(name.size() == std::string("NinjaImpact_2026-09-27_14-03-22.png").size() && name.starts_with("NinjaImpact_") &&
             name.ends_with(".png") && name.find(' ') == std::string::npos && name.find(':') == std::string::npos,
         "names carry the date and time, with nothing a file system refuses");
     check(free_path(dir, when) == dir / name, "a free name is used as it is");

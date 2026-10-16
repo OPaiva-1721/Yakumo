@@ -1866,8 +1866,8 @@ void draw_gpu_problem(const std::string &problem) {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted("Graphics problem");
     ImGui::TextUnformatted(problem.c_str());
-    ImGui::TextUnformatted("Please open the menu, choose System > Save the log..., and send the log to "
-                           "github.com/TeamGDB/Yakumo/issues/169. Video > GPU compatibility may help. This note "
+    ImGui::TextUnformatted("Please open the menu, choose System > Save the log..., and send the log. "
+                           "Video > GPU compatibility may help. This note "
                            "closes when the menu opens.");
     ImGui::PopTextWrapPos();
     ImGui::End();

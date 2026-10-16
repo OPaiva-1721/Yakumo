@@ -23,7 +23,7 @@ std::string property(const char *name) {
     return __system_property_get(name, value) > 0 ? std::string(value) : std::string();
 }
 
-// "Yakumo log 2026-09-28 19-45-03", in local time.
+// "Ninja Impact log 2026-09-28 19-45-03", in local time.
 std::string log_folder_name() {
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm local{};
@@ -54,7 +54,7 @@ std::optional<SavedLogs> save_logs(const fs::path &storage, const std::string &n
     const fs::path local = storage / "transfer" / name;
     fs::remove_all(local.parent_path(), ec);
     fs::create_directories(local, ec);
-    for (const char *file : {"yakumo.log", "yakumo-previous.log", "yakumo-fatal.log"})
+    for (const char *file : {"ninjaimpact.log", "ninjaimpact-previous.log", "ninjaimpact-fatal.log"})
         if (fs::exists(storage / file, ec)) fs::copy_file(storage / file, local / file, ec);
     if (fs::is_directory(storage / "logs", ec))
         fs::copy(storage / "logs", local / "logs", fs::copy_options::recursive, ec);
@@ -66,7 +66,7 @@ std::optional<SavedLogs> save_logs(const fs::path &storage, const std::string &n
 
 void fatal_error(const std::string &title, const std::string &text, int exit_code) {
     // The log first, all of it on disk, and a copy the next start keeps:
-    // yakumo.log becomes yakumo-previous.log at the next start and is gone
+    // ninjaimpact.log becomes ninjaimpact-previous.log at the next start and is gone
     // at the one after.
     std::cout << "[fatal] " << text << "\n" << std::flush;
     std::cerr << std::flush;
@@ -76,7 +76,7 @@ void fatal_error(const std::string &title, const std::string &text, int exit_cod
     const fs::path storage = storage_text != nullptr ? fs::path(storage_text) : fs::path();
     if (!storage.empty()) {
         std::error_code ec;
-        fs::copy_file(storage / "yakumo.log", storage / "yakumo-fatal.log", fs::copy_options::overwrite_existing, ec);
+        fs::copy_file(storage / "ninjaimpact.log", storage / "ninjaimpact-fatal.log", fs::copy_options::overwrite_existing, ec);
     }
 
     enum : int { kSave = 1, kClose = 2 };

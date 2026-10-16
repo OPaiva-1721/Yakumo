@@ -16,7 +16,7 @@ namespace mhp3rd::screenshot {
 // screenshots/ in the data directory, portable or per user.
 [[nodiscard]] std::filesystem::path folder();
 
-// "Yakumo_2026-09-27_14-03-22.png", in local time.
+// "NinjaImpact_2026-09-27_14-03-22.png", in local time.
 [[nodiscard]] std::string file_name(std::chrono::system_clock::time_point when);
 
 // The file in `folder` for a screenshot taken `when`: file_name, or with

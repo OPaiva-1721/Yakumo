@@ -116,7 +116,7 @@ DeviceFacts read_device_facts(VkPhysicalDevice device) {
 void log_line(const std::string &line) {
     std::cout << line << "\n";
 #if defined(__ANDROID__)
-    SDL_Log("Yakumo: %s", line.c_str());
+    SDL_Log("NinjaImpact: %s", line.c_str());
 #endif
 }
 

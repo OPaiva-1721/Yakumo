@@ -56,7 +56,7 @@ std::filesystem::path folder() {
 std::string file_name(std::chrono::system_clock::time_point when) {
     const std::tm tm = local_time(when);
     char text[64];
-    std::strftime(text, sizeof(text), "Yakumo_%Y-%m-%d_%H-%M-%S", &tm);
+    std::strftime(text, sizeof(text), "NinjaImpact_%Y-%m-%d_%H-%M-%S", &tm);
     return std::string(text) + ".png";
 }
 

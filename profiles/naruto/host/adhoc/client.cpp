@@ -1214,7 +1214,7 @@ std::filesystem::path Client::save_log(const std::filesystem::path &dir) const {
         }
         return "?";
     };
-    out << "Yakumo ad hoc log\n\n";
+    out << "Ninja Impact ad hoc log\n\n";
     out << "server: " << (d.server.empty() ? "(none)" : d.server) << " -> "
         << (d.server_address.empty() ? "-" : d.server_address) << "\n";
     out << "state: " << state(d.state) << ", failed attempts " << d.failed_attempts << ", reconnects " << d.reconnects

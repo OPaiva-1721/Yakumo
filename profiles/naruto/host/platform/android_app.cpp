@@ -36,15 +36,15 @@ void *run_game(void *argument) {
     return nullptr;
 }
 
-// An app has no terminal: what the program prints goes to yakumo.log in its
+// An app has no terminal: what the program prints goes to ninjaimpact.log in its
 // internal storage, where `adb shell run-as` and the menu's Save the log
-// reach it; the one before is kept as yakumo-previous.log.
+// reach it; the one before is kept as ninjaimpact-previous.log.
 void redirect_output() {
     const char *storage = SDL_GetAndroidInternalStoragePath();
     if (storage == nullptr) return;
-    const std::string log = std::string(storage) + "/yakumo.log";
+    const std::string log = std::string(storage) + "/ninjaimpact.log";
     // The previous run's log survives one start, for reporting a crash.
-    std::rename(log.c_str(), (std::string(storage) + "/yakumo-previous.log").c_str());
+    std::rename(log.c_str(), (std::string(storage) + "/ninjaimpact-previous.log").c_str());
     if (std::freopen(log.c_str(), "w", stdout) == nullptr) return;
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     // stderr shares stdout's file and its position. Opened on its own, each

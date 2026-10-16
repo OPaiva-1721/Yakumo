@@ -767,7 +767,7 @@ struct VulkanRenderer::Impl {
     std::array<std::int32_t, 4> cutout_px{};
     // The picture used to go into content_rect, which moved it off the
     // cutout's side and left a bar there alone (#170). MHP3RD_PICTURE_BESIDE_CUTOUT=1,
-    // or on Android the property debug.yakumo.picture_beside_cutout=1, brings
+    // or on Android the property debug.ninjaimpact.picture_beside_cutout=1, brings
     // that back for comparison.
     static bool picture_beside_cutout() {
         static const bool beside = [] {
@@ -775,7 +775,7 @@ struct VulkanRenderer::Impl {
                 return std::strcmp(value, "0") != 0;
 #if defined(__ANDROID__)
             char value[PROP_VALUE_MAX]{};
-            if (__system_property_get("debug.yakumo.picture_beside_cutout", value) > 0)
+            if (__system_property_get("debug.ninjaimpact.picture_beside_cutout", value) > 0)
                 return std::strcmp(value, "0") != 0;
 #endif
             return false;
@@ -817,7 +817,7 @@ struct VulkanRenderer::Impl {
     }
 #if defined(__ANDROID__)
     // Every number the picture's place on the screen comes from, in
-    // yakumo.log and logcat: the window as SDL sees it, the surface as the
+    // ninjaimpact.log and logcat: the window as SDL sees it, the surface as the
     // driver reports it, the swapchain made for it, the cutout and SDL's safe
     // area, and the content area drawn into. Once per swapchain and per change
     // of the insets, so a player's log shows where a bar comes from.

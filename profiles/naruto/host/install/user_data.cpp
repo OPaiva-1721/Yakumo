@@ -128,7 +128,7 @@ std::string check_writable(const std::filesystem::path &directory) {
     std::error_code ec;
     std::filesystem::create_directories(directory, ec);
     if (ec) return "Ninja Impact cannot create its data folder:\n" + path_to_utf8(directory) + "\n\n" + ec.message();
-    const std::filesystem::path probe = directory / ".yakumo-write-check";
+    const std::filesystem::path probe = directory / ".ninjaimpact-write-check";
     {
         std::ofstream out(probe, std::ios::trunc | std::ios::binary);
         out << "Ninja Impact checks that it can write here; this file is removed at once.\n";

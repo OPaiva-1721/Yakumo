@@ -192,7 +192,7 @@ Mac own_mac() {
 std::string nickname() {
     const settings::Settings &s = settings::current();
     std::string name = !s.adhoc_nickname.empty() ? s.adhoc_nickname : s.name;
-    if (name.empty()) name = "Yakumo";
+    if (name.empty()) name = "Ninja Impact";
     return name.substr(0, 127);
 }
 
