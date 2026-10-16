@@ -18,10 +18,10 @@ constexpr ElementInfo kInfo[kElements] = {
     {"item", "L"},
     {"dpad_up", "D-pad Up"},
     {"dpad_down", "D-pad Down"},
-    {"attack", "Attack"},
-    {"secondary", "Ninjutsu"},
+    {"attack", "Main attack"},
+    {"secondary", "Square"},
     {"combo", "Special (R + attack)"},
-    {"evade", "Jump"},
+    {"evade", "Cross"},
     {"use", "Triangle"},
     {"guard", "Guard"},
     {"special", "Guard (second)"},
@@ -34,35 +34,51 @@ constexpr ElementInfo kInfo[kElements] = {
 
 ActionLayout make_default() {
     ActionLayout l;
+    // To the thousandth, as settings.ini writes them, so a saved layout reads
+    // back equal to this one.
     const auto set = [&](Element e, Anchor anchor, float x, float y, float size, std::uint16_t buttons) {
-        l.at(e) = {anchor, x, y, size, buttons, true};
+        const auto q = [](float v) { return std::round(v * 1000.0f) / 1000.0f; };
+        l.at(e) = {anchor, q(x), q(y), q(size), buttons, true};
     };
-    // Laid out for Naruto's fights. The left thumb: a large stick low, L
-    // above it at the edge, D-pad Up and Down (the menus) beside it.
-    set(Element::Stick, Anchor::Left, 0.29f, 0.70f, 0.14f, 0u);
-    set(Element::Item, Anchor::Left, 0.11f, 0.40f, 0.055f, kL);
-    set(Element::DpadUp, Anchor::Left, 0.55f, 0.66f, 0.04f, kUp);
-    set(Element::DpadDown, Anchor::Left, 0.55f, 0.82f, 0.04f, kDown);
-    // The right thumb: an arc it reaches without moving the hand. Attack (□)
-    // large in the middle; jump (×) where the thumb rests, low at the edge;
-    // ninjutsu (○) above it; △ above the attack; guard (R) and the special
-    // (R and □ in one frame) inside the arc.
-    set(Element::Attack, Anchor::Right, 0.36f, 0.64f, 0.10f, kSquare);
-    set(Element::Evade, Anchor::Right, 0.15f, 0.80f, 0.075f, kCross);
-    set(Element::Secondary, Anchor::Right, 0.15f, 0.52f, 0.07f, kCircle);
-    set(Element::Use, Anchor::Right, 0.36f, 0.38f, 0.06f, kTriangle);
-    set(Element::Combo, Anchor::Right, 0.57f, 0.50f, 0.055f, static_cast<std::uint16_t>(kR | kSquare));
-    set(Element::Guard, Anchor::Right, 0.58f, 0.78f, 0.06f, kR);
-    // A second guard is not needed here; it stays available in the editor.
-    set(Element::Special, Anchor::Right, 0.30f, 0.18f, 0.05f, kR);
-    l.at(Element::Special).shown = false;
-    // Small, at the right edge near the top.
+    // Laid out for Naruto's fights, from a design for an 844x390 phone in
+    // landscape: positions there, in pixels, divided by its height (390).
+    // Left anchored from the left edge, right anchored from the right one
+    // (844 - x). Every element is at least 44 px across.
+    constexpr float kHeight = 390.0f, kWidth = 844.0f;
+    // A design element: its box's top-left corner and size, in pixels.
+    const auto left = [&](Element e, float x, float y, float size, std::uint16_t buttons) {
+        set(e, Anchor::Left, (x + size * 0.5f) / kHeight, (y + size * 0.5f) / kHeight, size * 0.5f / kHeight, buttons);
+    };
+    const auto right = [&](Element e, float x, float y, float size, std::uint16_t buttons) {
+        set(e, Anchor::Right, (kWidth - x - size * 0.5f) / kHeight, (y + size * 0.5f) / kHeight,
+            size * 0.5f / kHeight, buttons);
+    };
+    // The left thumb: Start at the top corner (a 60x40 pill, touched as a
+    // 44 px circle), L and R by the edge, the D-pad (the stick, drawn as a
+    // cross) low and inward.
+    set(Element::Start, Anchor::Left, 33.0f / kHeight, 60.0f / kHeight, 22.5f / kHeight, kStart);
+    left(Element::Item, 50.0f, 230.0f, 56.0f, kL);
+    left(Element::Guard, 90.0f, 300.0f, 56.0f, kR);
+    left(Element::Stick, 150.0f, 202.0f, 128.0f, 0u);
+    // The right thumb: ○ large in the middle, the main attack; □ above it, ×
+    // to its right, △ below that.
+    right(Element::Attack, 584.0f, 194.0f, 112.0f, kCircle);
+    right(Element::Secondary, 650.0f, 127.0f, 48.0f, kSquare);
+    right(Element::Evade, 727.0f, 169.0f, 56.0f, kCross);
+    right(Element::Use, 717.0f, 278.0f, 56.0f, kTriangle);
+    // Not in the design; kept in the editor, hidden. The menu opens with
+    // Android's Back as well.
+    set(Element::DpadUp, Anchor::Left, 0.30f, 0.10f, 0.04f, kUp);
+    set(Element::DpadDown, Anchor::Left, 0.42f, 0.10f, 0.04f, kDown);
+    set(Element::Combo, Anchor::Right, 0.42f, 0.10f, 0.055f, static_cast<std::uint16_t>(kR | kSquare));
+    set(Element::Special, Anchor::Right, 0.30f, 0.10f, 0.05f, kR);
     set(Element::Pause, Anchor::Right, 0.055f, 0.08f, 0.035f, 0u);
-    set(Element::Start, Anchor::Right, 0.055f, 0.18f, 0.035f, kStart);
-    set(Element::Select, Anchor::Right, 0.055f, 0.28f, 0.035f, kSelect);
-    // Above the middle, clear of both thumbs' elements.
+    set(Element::Select, Anchor::Right, 0.055f, 0.20f, 0.035f, kSelect);
     set(Element::Swipe, Anchor::Centre, 0.0f, 0.30f, 0.09f, 0u);
     set(Element::R3, Anchor::Right, 0.075f, 0.925f, 0.04f, 0u);
+    for (const Element e : {Element::DpadUp, Element::DpadDown, Element::Combo, Element::Special, Element::Pause,
+             Element::Select, Element::Swipe, Element::R3})
+        l.at(e).shown = false;
     return l;
 }
 

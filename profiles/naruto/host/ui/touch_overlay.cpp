@@ -199,9 +199,9 @@ void draw_icon(ImDrawList *list, Element element, ImVec2 c, float r, ImU32 ink, 
         for (int i = -1; i <= 1; ++i)
             list->AddLine({c.x - s * 0.7f, c.y + i * s * 0.45f}, {c.x + s * 0.7f, c.y + i * s * 0.45f}, ink, t);
         break;
-    case Element::Start:
-        list->AddTriangleFilled(
-            {c.x - s * 0.4f, c.y - s * 0.6f}, {c.x + s * 0.62f, c.y}, {c.x - s * 0.4f, c.y + s * 0.6f}, ink);
+    case Element::Start: // ▶, outlined
+        list->AddTriangle(
+            {c.x - s * 0.4f, c.y - s * 0.6f}, {c.x + s * 0.62f, c.y}, {c.x - s * 0.4f, c.y + s * 0.6f}, ink, t);
         break;
     case Element::Select:
         list->AddRect({c.x - s * 0.7f, c.y - s * 0.62f}, {c.x + s * 0.25f, c.y + s * 0.3f}, ink, 0.0f, 0, t);
@@ -245,18 +245,50 @@ void draw_action_element(ImDrawList *list, Element element, const input::touch::
         if (look.selected) list->AddRect(min, max, accent, r * 0.5f, 0, t * 1.4f);
         return;
     }
-    list->AddCircleFilled(c, r, colour(0, 0, 0, base * (look.held ? 0.55f : 0.32f)));
-    // A dark edge under the light one keeps the outline visible on a bright picture.
-    list->AddCircle(c, r + t, colour(0, 0, 0, base * 0.55f), 0, t);
-    list->AddCircle(c, r, white, 0, t);
+    // Blue-grey edges on a translucent dark fill; the main attack's edge is
+    // orange, and its fill warmer.
+    const bool main_attack = element == Element::Attack;
+    const ImU32 edge = main_attack ? colour(226, 103, 74, base * (look.held ? 1.0f : 0.9f))
+                                   : colour(143, 163, 196, base * (look.held ? 1.0f : 0.9f));
+    const ImU32 fill = main_attack ? colour(226, 103, 74, base * (look.held ? 0.5f : 0.22f))
+                                   : colour(20, 26, 40, base * (look.held ? 0.6f : 0.35f));
+    if (element == Element::Start) {
+        // A pill, 1.5 times as wide as it is tall.
+        const float h = r * 0.91f;
+        const ImVec2 min{c.x - h * 1.5f, c.y - h};
+        const ImVec2 max{c.x + h * 1.5f, c.y + h};
+        list->AddRectFilled(min, max, fill, h);
+        list->AddRect(min, max, colour(0, 0, 0, base * 0.45f), h, 0, t * 2.0f);
+        list->AddRect(min, max, edge, h, 0, t);
+        if (look.held) list->AddRectFilled(min, max, colour(255, 255, 255, std::max(base, 0.5f) * 0.4f), h);
+        draw_icon(list, element, c, r, white, t);
+        if (look.hidden) list->AddLine({c.x - r * 0.8f, c.y + r * 0.8f}, {c.x + r * 0.8f, c.y - r * 0.8f}, white, t);
+        if (look.selected) list->AddRect({min.x - t * 3.0f, min.y - t * 3.0f}, {max.x + t * 3.0f, max.y + t * 3.0f},
+            accent, h + t * 3.0f, 0, t * 1.5f);
+        return;
+    }
+    list->AddCircleFilled(c, r, fill);
+    // A dark edge under the coloured one keeps the outline visible on a bright picture.
+    list->AddCircle(c, r + t, colour(0, 0, 0, base * 0.45f), 0, t);
+    list->AddCircle(c, r, edge, 0, main_attack ? t * 1.6f : t);
     if (element == Element::Stick) {
-        // The ring, arrows inside it and the knob where the thumb is.
-        const float s = r * 0.8f;
+        // A D-pad: a cross with an arrow in each arm, and a dot where the
+        // thumb is. It moves like the analog stick, in any direction.
+        const float arm = r * 0.72f;
+        const float half = r * 0.24f;
+        const ImU32 cross_fill = colour(143, 163, 196, base * 0.28f);
+        list->AddRectFilled({c.x - half, c.y - arm}, {c.x + half, c.y + arm}, cross_fill, half * 0.35f);
+        list->AddRectFilled({c.x - arm, c.y - half}, {c.x + arm, c.y + half}, cross_fill, half * 0.35f);
+        const ImVec2 outline[] = {{c.x - half, c.y - arm}, {c.x + half, c.y - arm}, {c.x + half, c.y - half},
+            {c.x + arm, c.y - half}, {c.x + arm, c.y + half}, {c.x + half, c.y + half}, {c.x + half, c.y + arm},
+            {c.x - half, c.y + arm}, {c.x - half, c.y + half}, {c.x - arm, c.y + half}, {c.x - arm, c.y - half},
+            {c.x - half, c.y - half}};
+        list->AddPolyline(outline, 12, edge, ImDrawFlags_Closed, t);
         for (const ImVec2 d : {ImVec2{1, 0}, ImVec2{-1, 0}, ImVec2{0, 1}, ImVec2{0, -1}}) {
-            const ImVec2 tip = add(c, d, s);
+            const ImVec2 tip = add(c, d, arm * 0.82f);
             const ImVec2 p{-d.y, d.x};
-            list->AddTriangleFilled(tip, add(add(tip, d, -r * 0.14f), p, r * 0.1f),
-                add(add(tip, d, -r * 0.14f), p, -r * 0.1f), colour(255, 255, 255, base * 0.6f));
+            list->AddTriangleFilled(tip, add(add(tip, d, -r * 0.16f), p, r * 0.12f),
+                add(add(tip, d, -r * 0.16f), p, -r * 0.12f), colour(255, 255, 255, base * 0.75f));
         }
         ImVec2 knob = c;
         if (look.held) {
@@ -266,13 +298,15 @@ void draw_action_element(ImDrawList *list, Element element, const input::touch::
             const float k = length > r ? r / length : 1.0f;
             knob = {c.x + dx * k, c.y + dy * k};
         }
-        list->AddCircleFilled(knob, r * 0.42f, colour(255, 255, 255, base * (look.held ? 0.75f : 0.45f)));
-        list->AddCircle(knob, r * 0.42f, colour(0, 0, 0, base * 0.4f), 0, t);
+        if (look.held) {
+            list->AddCircleFilled(knob, r * 0.2f, colour(255, 255, 255, base * 0.7f));
+            list->AddCircle(knob, r * 0.2f, colour(0, 0, 0, base * 0.4f), 0, t);
+        }
     } else {
         if (look.held) list->AddCircleFilled(c, r * 0.94f, colour(255, 255, 255, std::max(base, 0.5f) * 0.55f));
         // A button that presses one PSP button shows that button's symbol;
-        // the attack keeps its blade (with □ beside it) and the rest their icons.
-        const bool glyph = element != Element::Attack && input::touch::rebindable(element) &&
+        // the rest their icons.
+        const bool glyph = input::touch::rebindable(element) &&
             draw_psp_glyph(list, placement.buttons, c, r, base * (look.held ? 1.0f : 0.9f), t);
         if (!glyph) draw_icon(list, element, c, r, white, t);
         // What it presses, small beside it.

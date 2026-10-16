@@ -21,18 +21,18 @@
 namespace mhp3rd::input::touch {
 
 enum class Element : std::uint8_t {
-    Stick, // the analog stick, fixed where it is placed
-    Item,  // L: the item pouch
+    Stick, // the analog stick, drawn as a D-pad
+    Item,  // L
     DpadUp,
     DpadDown,
-    Attack,    // the large main attack: △
-    Secondary, // ○
-    Combo,     // △ + ○ in one frame: the combined attack
+    Attack,    // the large main attack: ○
+    Secondary, // □
+    Combo,     // R + □ in one frame
     Evade,     // ✕
-    Use,       // □: sheathe, use an item, gather
+    Use,       // △
     Guard,     // R
     Special,   // R as well, where the other thumb reaches it
-    Pause,     // Yakumo's menu
+    Pause,     // the port's menu
     Start,
     Select,
     Swipe, // the swipe area: left and right swipes press D-pad Left and Right

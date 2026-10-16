@@ -412,6 +412,17 @@ int main() {
         previous["input.touch_psp.r3"] = "left 0.300 0.500 0.050 0x0000 1";
         check(from_entries(previous).touch_psp.at(PspElement::R3).anchor == Anchor::Left,
             "customized old R3 placements are preserved");
+        {
+            auto old_design = to_entries(legacy);
+            old_design.erase("input.touch_action.version");
+            old_design["input.touch_action.attack"] = "right 0.360 0.640 0.100 0x8000 1";
+            check(from_entries(old_design).touch_action == default_action_layout(),
+                "a fight layout saved before the current design gives way to it");
+            auto edited_now = to_entries(legacy);
+            edited_now["input.touch_action.attack"] = "right 0.360 0.640 0.100 0x8000 1";
+            check(from_entries(edited_now).touch_action.at(Element::Attack).buttons == 0x8000,
+                "a fight layout saved with the current design stays as it is");
+        }
         previous["input.touch_action.r3"] = "right 0.075 0.925 0.040 0x4000 1";
         check(from_entries(previous).touch_action.at(Element::R3).buttons == 0,
             "saved Action R3 bindings cannot inject PSP buttons");

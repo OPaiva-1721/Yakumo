@@ -354,7 +354,9 @@ void test_action_layout_fits(float width, float height, Insets insets, float sca
         for (std::size_t j = i + 1; j < kElements; ++j) {
             if (static_cast<Element>(j) == Element::Swipe) continue;
             const Placed &q = controls.placed(static_cast<Element>(j));
-            apart = apart && std::hypot(p.centre.x - q.centre.x, p.centre.y - q.centre.y) >= p.radius + q.radius;
+            const bool clear = std::hypot(p.centre.x - q.centre.x, p.centre.y - q.centre.y) >= p.radius + q.radius;
+            if (!clear) std::printf("  %s overlaps %s\n", info(static_cast<Element>(i)).key, info(static_cast<Element>(j)).key);
+            apart = apart && clear;
         }
     }
     check(inside, what);
@@ -375,6 +377,36 @@ void test_action_layout() {
                 back.shown == p.shown,
             "every placement round-trips through settings.ini");
     }
+    // The design it comes from: an 844x390 phone, positions in pixels.
+    {
+        ActionControls phone;
+        phone.set_layout(default_action_layout(), safe_area(844.0f, 390.0f, {}), 1.0f);
+        const auto near = [&](Element e, float x, float y, float radius) {
+            const Placed &p = phone.placed(e);
+            return std::fabs(p.centre.x - x) < 1.0f && std::fabs(p.centre.y - y) < 1.0f &&
+                std::fabs(p.radius - radius) < 1.0f;
+        };
+        check(near(Element::Attack, 640.0f, 250.0f, 56.0f) && near(Element::Secondary, 674.0f, 151.0f, 24.0f) &&
+                near(Element::Evade, 755.0f, 197.0f, 28.0f) && near(Element::Use, 745.0f, 306.0f, 28.0f),
+            "the face buttons sit where the design puts them");
+        check(near(Element::Stick, 214.0f, 266.0f, 64.0f) && near(Element::Item, 78.0f, 258.0f, 28.0f) &&
+                near(Element::Guard, 118.0f, 328.0f, 28.0f) && near(Element::Start, 33.0f, 60.0f, 22.0f),
+            "and the D-pad, L, R and Start too");
+        const auto &l = default_action_layout();
+        check(l.at(Element::Attack).buttons == 0x2000u && l.at(Element::Secondary).buttons == 0x8000u &&
+                l.at(Element::Evade).buttons == 0x4000u && l.at(Element::Use).buttons == 0x1000u &&
+                l.at(Element::Item).buttons == 0x0100u && l.at(Element::Guard).buttons == 0x0200u,
+            "○ is the main attack, with □, ×, △, L and R beside it");
+        bool targets = true;
+        std::size_t shown = 0;
+        for (std::size_t i = 0; i < kElements; ++i) {
+            if (!l.elements[i].shown) continue;
+            ++shown;
+            targets = targets && phone.placed(static_cast<Element>(i)).radius * 2.0f >= 44.0f;
+        }
+        check(shown == 8u && targets, "the design's eight controls are shown, each at least 44 px across");
+    }
+
     Placement placement;
     check(!parse("middle 0 0 0.1 0x1000 1", placement) && !parse("left 0 0", placement), "bad placements are refused");
     check(default_action_layout().at(Element::Combo).buttons == 0x8200u, "the special is R and □ together");
@@ -408,10 +440,17 @@ void test_floating_stick() {
     check(!controls.stick_held(), "without floating, a free finger turns the camera");
 }
 
+// The default layout with every element shown, the hidden ones too.
+ActionLayout every_element() {
+    ActionLayout all = default_action_layout();
+    for (Placement &p : all.elements) p.shown = true;
+    return all;
+}
+
 void test_action_fingers() {
     ActionControls controls;
     const Area area = safe_area(2000.0f, 1000.0f, {});
-    controls.set_layout(default_action_layout(), area, 1.0f);
+    controls.set_layout(every_element(), area, 1.0f);
     const auto centre = [&](Element e) { return controls.placed(e).centre; };
     std::uint64_t ms = 1000u;
     const auto r3 = centre(Element::R3);
@@ -424,7 +463,7 @@ void test_action_fingers() {
     check(!controls.held(Element::R3), "Action R3 releases with its finger");
 
     controls.finger_down(1, centre(Element::Attack), ms);
-    check(controls.buttons(ms) == 0x8000u && controls.held(Element::Attack), "the attack presses □");
+    check(controls.buttons(ms) == 0x2000u && controls.held(Element::Attack), "the main attack presses ○");
     check(controls.take_haptics() == 1 && controls.take_haptics() == 0, "a press gives one haptic tick");
     controls.finger_move(1, centre(Element::Evade), ms + 10u);
     check(controls.buttons(ms) == 0x4000u, "a thumb slides from the attack to evade");
@@ -472,7 +511,7 @@ void test_action_fingers() {
     controls.release_all();
 
     // A hidden element is not there, and a rebound one presses what it is bound to.
-    ActionLayout changed = default_action_layout();
+    ActionLayout changed = every_element();
     changed.at(Element::Secondary).shown = false;
     changed.at(Element::Guard).buttons = 0x0200u | 0x1000u;
     changed.at(Element::R3).buttons = 0x4000u;
