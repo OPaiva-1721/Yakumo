@@ -1339,6 +1339,26 @@ struct VulkanRenderer::Impl {
         std::vector<std::uint32_t> guest_words;
     };
     std::map<std::uint32_t, GpuCopy> gpu_copies;
+    // The rectangles of render targets copied out on the GPU this frame and
+    // the last: screen space the game borrows to draw a picture it then copies
+    // away (Naruto draws its blur source into a 64x64 corner). Fill leaves the
+    // through-mode draws inside them where the game put them.
+    struct Borrowed {
+        std::uint32_t target{};
+        std::uint32_t x{}, y{}, width{}, height{};
+    };
+    std::vector<Borrowed> borrowed_now, borrowed_before;
+    [[nodiscard]] bool inside_borrowed(std::uint32_t target, float left, float top, float right, float bottom) const {
+        const std::uint32_t wanted = GuestMemory::canonical(target);
+        for (const std::vector<Borrowed> *list : {&borrowed_now, &borrowed_before})
+            for (const Borrowed &region : *list)
+                if (region.target == wanted && left >= static_cast<float>(region.x) - 0.5f &&
+                    top >= static_cast<float>(region.y) - 0.5f &&
+                    right <= static_cast<float>(region.x + region.width) + 0.5f &&
+                    bottom <= static_cast<float>(region.y + region.height) + 0.5f)
+                    return true;
+        return false;
+    }
     void destroy_gpu_copy(GpuCopy &copy);
     void destroy_gpu_copies();
     [[nodiscard]] const GpuCopy *find_gpu_copy(const GuestMemory &memory, const TextureState &texture) const;
@@ -7366,11 +7386,15 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     if (call.through && !call.clear_mode && framebuffer_source.target == nullptr && gpu_copy == nullptr &&
         impl.shows(call.target.color_address) && impl.interface_fit(fit_x, fit_y)) {
         float left = impl.scratch.front().x, right = left;
+        float top = impl.scratch.front().y, bottom = top;
         for (const GpuVertex &vertex : impl.scratch) {
             left = std::min(left, vertex.x);
             right = std::max(right, vertex.x);
+            top = std::min(top, vertex.y);
+            bottom = std::max(bottom, vertex.y);
         }
-        if (right - left < kScreenWideDraw) {
+        if (right - left < kScreenWideDraw &&
+            !impl.inside_borrowed(call.target.color_address, left, top, right, bottom)) {
             fitted = true;
             const float centre_x = 0.5f * static_cast<float>(kPspWidth);
             const float centre_y = 0.5f * static_cast<float>(kPspHeight);
@@ -8043,6 +8067,14 @@ bool VulkanRenderer::gpu_block_transfer(const BlockTransfer &transfer, const Gue
     impl.transition(commands, source->color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     perf::count_target_copy();
+    // A copy of the whole screen (Naruto keeps last frame's picture this way)
+    // borrows nothing: the interface drawn over it is fitted as usual.
+    const Impl::Borrowed region{source_base, x, y, transfer.width, transfer.height};
+    if (static_cast<float>(transfer.width) < kScreenWideDraw && std::none_of(impl.borrowed_now.begin(), impl.borrowed_now.end(), [&](const Impl::Borrowed &other) {
+            return other.target == region.target && other.x == region.x && other.y == region.y &&
+                other.width == region.width && other.height == region.height;
+        }))
+        impl.borrowed_now.push_back(region);
     copy.width = transfer.width;
     copy.height = transfer.height;
     copy.stride = transfer.destination_stride;
@@ -8992,6 +9024,9 @@ bool VulkanRenderer::present(
     if (!impl.ready) return false;
     if (!impl.recording) begin_frame();
     impl.end_pass();
+    // This frame's borrowed regions are the last frame's from now on.
+    impl.borrowed_before.swap(impl.borrowed_now);
+    impl.borrowed_now.clear();
 
     static const bool trace3d = std::getenv("MHP3RD_TRACE_3D") != nullptr;
     static const bool trace_camera = std::getenv("MHP3RD_TRACE_CAMERA") != nullptr;
