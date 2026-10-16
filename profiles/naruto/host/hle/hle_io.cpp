@@ -6,9 +6,7 @@
 #include "kernel/fast_loading.hpp"
 #include "kernel/load_trace.hpp"
 #include "kernel/iso_image.hpp"
-#include "mods/mhp3rd_mods.hpp"
 #include "platform/utf8_path.hpp"
-#include "text/translation.hpp"
 
 #include "psprecomp/common.hpp"
 
@@ -55,10 +53,6 @@ struct OpenFile {
     std::uint64_t size{};
     std::uint64_t position{};
     std::unique_ptr<std::fstream> host;
-    // Inside DATA.BIN: read through the mods, which may change what the game
-    // gets there (host/mods/mhp3rd_mods.hpp). Byte 0 is this far into it.
-    bool archive{};
-    std::uint64_t archive_offset{};
     // The *Async calls finish their work at once and leave the result here for
     // sceIoWaitAsync/sceIoPollAsync; a closed descriptor lingers until then.
     std::optional<std::int64_t> async_result;
@@ -201,13 +195,6 @@ std::int64_t open_file(const std::string &full_path, std::uint32_t flags) {
         } else {
             return static_cast<std::int32_t>(io_error::kFileNotFound);
         }
-        // DATA.BIN, or raw sectors inside it, as the game loads a module stored there.
-        if (const auto data_bin = mods::data_bin_on_disc(); data_bin && !split.path.empty() &&
-            file.disc_offset >= data_bin->offset && file.disc_offset < data_bin->offset + data_bin->size) {
-            file.archive = true;
-            file.archive_offset = file.disc_offset - data_bin->offset;
-            if (file.archive_offset == 0u && file.size == data_bin->size) file.size = mods::data_bin_size();
-        }
     } else if (split.device == Device::MemoryStick) {
         const auto path = host_path(split.path);
         std::error_code ec;
@@ -273,7 +260,6 @@ void write_stat(
 
 // Reads a disc file at `offset` into it.
 std::size_t read_disc(const OpenFile &file, std::uint64_t offset, std::span<std::uint8_t> out) {
-    if (file.archive && mods::serving()) return mods::read_data_bin(file.archive_offset + offset, out);
     return io().disc->read(file.disc_offset + offset, out);
 }
 
@@ -310,10 +296,6 @@ std::uint32_t read_file(Runtime &rt, std::uint32_t fd, std::uint32_t address, st
     if (file.kind == OpenFile::Kind::Disc) {
         load_trace::note_disc_read(buffer.size());
         fast_loading::note_disc_read();
-        // A read inside DATA.BIN may carry a text block the translation
-        // replaces, in place, before the game copies it out
-        // (text/translation.hpp).
-        if (file.archive) text::translate_read(file.archive_offset + file.position, buffer);
     } else {
         load_trace::note_memory_stick_read(buffer.size());
     }
@@ -452,7 +434,6 @@ void register_io(
     HleRegistrar &hle, const std::filesystem::path &disc_image, const std::filesystem::path &memory_stick) {
     if (!disc_image.empty()) io().disc = std::make_unique<IsoImage>(disc_image);
     io().memory_stick = memory_stick;
-    mods::attach_disc(io().disc.get());
     // The player's keys (crypto/keys_file.hpp) sit in the game directory.
     pgd::set_host_keys_path(memory_stick.parent_path() / "keys.txt");
 
@@ -590,12 +571,7 @@ void register_io(
         std::uint32_t result = io_error::kFileNotFound;
         if (split.device == Device::Disc && io().disc) {
             if (const auto entry = io().disc->find(split.path)) {
-                // DATA.BIN is as large as the mods make it.
-                const auto data_bin = mods::data_bin_on_disc();
-                const bool is_data_bin = data_bin && !entry->directory &&
-                    static_cast<std::uint64_t>(entry->lba) * IsoImage::kSectorSize == data_bin->offset;
-                write_stat(rt.memory(), arg(ctx, 1), entry->directory,
-                    is_data_bin ? mods::data_bin_size() : entry->size, entry->lba);
+                write_stat(rt.memory(), arg(ctx, 1), entry->directory, entry->size, entry->lba);
                 result = 0u;
             }
         } else if (split.device == Device::MemoryStick) {

@@ -1,8 +1,6 @@
 #include "debug/debug_console.hpp"
 
 #include "debug/debug_tools.hpp"
-#include "debug/game_state.hpp"
-#include "debug/quest_start.hpp"
 #include "game/guest_ram.hpp"
 #include "platform/utf8_path.hpp"
 #include "hle/hle_common.hpp"
@@ -12,13 +10,9 @@
 #include "adhoc/session.hpp"
 #include "adhoc/client.hpp"
 #include "audio/audio_sink.hpp"
-#include "text/translation.hpp"
-#include "game/layered_armor.hpp"
 #if defined(MHP3RD_HAS_RENDERER)
 #include "camera/free_camera.hpp"
 #include "camera/game_camera.hpp"
-#include "camera/lock_on.hpp"
-#include "gpu/game_hud.hpp"
 #include "gpu/vulkan_renderer.hpp"
 #include "perf/frame_stats.hpp"
 #include <SDL3/SDL.h>
@@ -133,31 +127,20 @@ std::vector<std::string> run_command(Ram &ram, const std::string &line) {
         const char *mode = std::getenv("MHP3RD_DEVICE_TEST");
         if (mode == nullptr || std::string(mode) != "1")
             return {"observation unavailable: explicit developer test mode required"};
-        game_command(ram, command, args, out, game::layered::observed_hunter(kernel().runtime().memory()));
+        out.push_back("{\"game\":\"ULES01537\"}");
         std::string &json = out.front();
         json.pop_back();
         json += ",\"clock_us\":" + std::to_string(kernel().now_us()) +
             ",\"vblanks\":" + std::to_string(kernel().vblank_count()) +
             ",\"movie\":" + (mpeg_active() ? "true" : "false") +
-            ",\"online\":" + (adhoc_session_active() || adhoc_networking_on() ? "true" : "false") +
+            ",\"online\":" + (adhoc_session_active() ? "true" : "false") +
             ",\"fast_loading\":" + (fast_loading::active() ? "true" : "false") +
             ",\"fast_forward\":" + (fast_forward::active() ? "true" : "false");
         const auto network = adhoc::Client::get().diagnostics();
         json += ",\"peer_count\":" + std::to_string(network.peers.size()) +
             ",\"peer_received\":" + std::to_string(network.total.bytes_in);
-        const auto cheats = held_cheats();
-        json += ",\"quest_cheats\":" +
-            std::string(cheats.health || cheats.stamina || cheats.timer || cheats.one_hit ? "true" : "false");
         json += ",\"audio_device\":" + std::string(audio::AudioSink::instance().has_device() ? "true" : "false") +
             ",\"audio_gain\":" + std::to_string(audio::AudioSink::instance().output_gain());
-        json += ",\"text_blocks\":[";
-        bool first_block = true;
-        for (const auto &block : text::observed_blocks()) {
-            if (!first_block) json += ',';
-            first_block = false;
-            json += "{\"entry\":" + std::to_string(block.entry) + ",\"address\":" + std::to_string(block.address) + '}';
-        }
-        json += ']';
 #if defined(_WIN32)
         json += ",\"host_pid\":" + std::to_string(_getpid());
 #else
@@ -172,12 +155,7 @@ std::vector<std::string> run_command(Ram &ram, const std::string &line) {
         else
             json += "null";
         json += ",\"free_camera\":" + std::string(free.active ? "true" : "false") +
-            ",\"photo\":" + (free.paused ? "true" : "false") +
-            ",\"hud_hidden\":" + (gpu::hud::active() ? "true" : "false") +
-            ",\"hud_requested\":" + (gpu::hud::hidden() ? "true" : "false") +
-            ",\"hud_available\":" + (gpu::hud::available() ? "true" : "false") +
-            ",\"lock_on\":" + (camera::lock_on_status().locked ? "true" : "false");
-        json += ",\"lock_target\":" + std::to_string(camera::lock_on_status().target);
+            ",\"photo\":" + (free.paused ? "true" : "false");
         if (auto *renderer = active_renderer(); renderer && renderer->available()) {
             const auto pad = renderer->pad();
             const auto view = renderer->camera();
@@ -293,40 +271,7 @@ std::vector<std::string> run_command(Ram &ram, const std::string &line) {
             bytes.push_back(static_cast<char>(ram.load8(a)));
         file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         out.push_back("dumped " + std::to_string(bytes.size()) + " bytes from " + hex(start) + " to " + path);
-    } else if (command == "quest" && !args.empty() && args[0] == "list") {
-        // quest list [village|hall] [STARS]: the quests, or some of them.
-        std::size_t next = 1u;
-        std::optional<quests::Board> board;
-        if (args.size() > 1u && (args[1] == "village" || args[1] == "hall")) {
-            board = args[1] == "hall" ? quests::Board::Hall : quests::Board::Village;
-            ++next;
-        }
-        const std::uint32_t stars = arg(next);
-        std::size_t shown = 0u;
-        for (const quests::Quest &q : board_quests()) {
-            if ((board && q.board() != *board) || (stars != 0u && q.stars != stars)) continue;
-            out.push_back("  " + std::to_string(q.id) + "  " +
-                (q.board() == quests::Board::Hall ? "Hall " : "village ") + std::to_string(q.stars) + " star  " +
-                q.name + "  (" + quests::monster_list(q) + "; fee " + std::to_string(q.fee) + "z)");
-            ++shown;
-        }
-        out.push_back(std::to_string(shown) + " quests" +
-            (board_quests().empty() ? std::string(" (the game's quest lists could not be read)") : std::string()));
-    } else if (command == "quest" && !args.empty() && args[0] == "start") {
-        // quest start ID: leave for that quest, as its gate does.
-        if (args.size() < 2u) {
-            out.push_back("usage: quest start ID (see quest list)");
-        } else if (!blocked_reason().empty()) {
-            out.push_back("refused (" + blocked_reason() + "): " + line);
-        } else if (const quests::Quest *q = find_quest(static_cast<std::uint16_t>(arg(1))); q == nullptr) {
-            out.push_back("not started: " + args[1] + " is not a village or Hall quest the game's lists hold");
-        } else {
-            out.push_back(quests::start(ram, *q));
-        }
-    } else if (command != "state" && command != "item" && command != "table" && command != "quest" &&
-        !blocked_reason().empty()) {
-        out.push_back("refused (" + blocked_reason() + "): " + line);
-    } else if (!game_command(ram, command, args, out)) {
+    } else {
         out.push_back("unknown command: " + command);
     }
     return out;

@@ -1,7 +1,6 @@
 #include "platform/android_documents.hpp"
 
 #include "platform/android_jni.hpp"
-#include "text/language.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -320,38 +319,6 @@ std::uint64_t FolderImport::bytes() const {
 
 std::optional<PickedImport> FolderImport::take() {
     return impl_->work.get();
-}
-
-std::optional<PickedImport> pick_translation_to_import(const fs::path &staging) {
-    const auto document = pick_document();
-    if (!document) return std::nullopt;
-    PickedImport result;
-    std::error_code ec;
-    fs::create_directories(staging, ec);
-    if (ec) {
-        result.error = "cannot create translation transfer folder";
-        return result;
-    }
-    fs::path folder;
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    for (unsigned attempt = 0; attempt < 64; ++attempt) {
-        auto candidate = staging / ("translation-" + std::to_string(stamp) + "-" + std::to_string(attempt));
-        if (fs::create_directory(candidate, ec)) {
-            folder = std::move(candidate);
-            break;
-        }
-        if (ec) break;
-    }
-    if (folder.empty()) {
-        result.error = "cannot stage translation document";
-        return result;
-    }
-    result.staged = folder / "selected.lang";
-    if (!copy_document_to_file(*document, result.staged, result.error, text::kMaxTranslationBytes)) {
-        fs::remove_all(folder, ec);
-        result.staged.clear();
-    }
-    return result;
 }
 
 std::optional<PickedImport> pick_saves_to_import(const fs::path &staging) {

@@ -61,22 +61,6 @@ if(MHP3RD_GENERATED)
     set(MHP3RD_HUD_INC "${CMAKE_CURRENT_BINARY_DIR}/generated_hooks/hud_functions.inc")
     file(CONFIGURE OUTPUT "${MHP3RD_HUD_INC}" CONTENT "${hud_lines}" @ONLY)
 
-    # Layered armor (host/game/layered_armor_hook.cpp) stands in for the game's
-    # lookup of an armor part's model and wraps the hunter's load step, so
-    # their units are read from the corpus too.
-    set(MHP3RD_LAYERED_FUNCTIONS 08869778 088A5564)
-    list(JOIN MHP3RD_LAYERED_FUNCTIONS "|" layered_pattern)
-    set(layered_lines "")
-    foreach(unit IN LISTS MHP3RD_GENERATED)
-        file(STRINGS "${unit}" hits REGEX "register_function\\(0x(${layered_pattern})u, &recomp_unit_[0-9]+,")
-        foreach(hit IN LISTS hits)
-            string(REGEX MATCH "0x[0-9A-F]+u, &recomp_unit_[0-9]+" pair "${hit}")
-            string(REPLACE ", &" ", " pair "${pair}")
-            string(APPEND layered_lines "MHP3RD_LAYERED_FUNCTION(${pair})\n")
-        endforeach()
-    endforeach()
-    set(MHP3RD_LAYERED_INC "${CMAKE_CURRENT_BINARY_DIR}/generated_hooks/layered_armor_functions.inc")
-    file(CONFIGURE OUTPUT "${MHP3RD_LAYERED_INC}" CONTENT "${layered_lines}" @ONLY)
     # A regenerated corpus with the same file names must be read again.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${MHP3RD_GENERATED})
 else()
@@ -137,15 +121,12 @@ if(MHP3RD_RENDERER)
             host/ui/input_script.cpp
             host/ui/layer.cpp
             host/ui/menu.cpp
-            host/ui/layered_armor_screen.cpp
-            host/ui/mods_screen.cpp
             host/ui/save_screen.cpp
             host/ui/setup_screens.cpp
             host/ui/text_input.cpp
             host/ui/touch_editor.cpp
             host/ui/touch_overlay.cpp
             host/ui/texture_pack_screen.cpp
-            host/ui/translation_screen.cpp
             host/ui/widgets.cpp
             third_party/imgui/imgui.cpp
             third_party/imgui/imgui_draw.cpp
@@ -249,21 +230,7 @@ set(MHP3RD_HOST_SOURCES
     host/install/installer_dialogs.cpp
     host/install/user_data.cpp
     host/settings/settings.cpp
-    host/text/language.cpp
-    host/text/translation.cpp
-    host/mods/file_overlay.cpp
-    host/mods/mod_import.cpp
-    host/mods/mod_ini.cpp
-    host/mods/mod_library.cpp
-    host/mods/mod_session.cpp
-    host/mods/mhp3rd_data_bin.cpp
-    host/mods/mhp3rd_mod_format.cpp
-    host/mods/mhp3rd_mods.cpp
     host/game/guest_ram.cpp
-    host/game/game_data.cpp
-    host/game/equipment_models.cpp
-    host/game/layered_armor.cpp
-    host/game/layered_armor_hook.cpp
     third_party/tiny_aes/aes.c
 )
 # tiny-AES-c is C; the project only enables C++, which compiles it unchanged.
@@ -348,10 +315,6 @@ if(MHP3RD_HUD_INC)
     target_compile_definitions(Yakumo PRIVATE
         "MHP3RD_HUD_FUNCTIONS_INC=\"${MHP3RD_HUD_INC}\"")
 endif()
-if(MHP3RD_LAYERED_INC)
-    target_compile_definitions(Yakumo PRIVATE
-        "MHP3RD_LAYERED_FUNCTIONS_INC=\"${MHP3RD_LAYERED_INC}\"")
-endif()
 # The NID table is compiled in, so the program reads nothing from the checkout
 # it was built in.
 set(MHP3RD_NIDS_CSV "${PROJECT_SOURCE_DIR}/configs/nids.csv")
@@ -392,34 +355,17 @@ set_target_properties(Yakumo PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     JOB_POOL_COMPILE psprecomp_generated)
 
-# Developer tools (host/debug): the menu's Debug page, with cheats for testing,
-# and the command file that drives it from a script. Never in a release build:
+# Developer tools (host/debug): the command file that reads and writes guest
+# memory from a script. Never in a release build:
 # MHP3RD_RELEASE compiles all of it out whatever this option says. A developer
 # build still shows it only when MHP3RD_DEBUG_MENU=1 is set at run time.
-option(MHP3RD_DEBUG_MENU "Compile the developer tools (Debug page) into non-release builds" ON)
+option(MHP3RD_DEBUG_MENU "Compile the developer tools into non-release builds" ON)
 if(MHP3RD_DEBUG_MENU AND NOT MHP3RD_RELEASE)
     target_sources(Yakumo PRIVATE
         host/debug/debug_console.cpp
-        host/debug/debug_tools.cpp
-        host/debug/game_state.cpp
-        host/debug/quest_start.cpp)
-    if(MHP3RD_RENDERER)
-        target_sources(Yakumo PRIVATE host/ui/debug_screen.cpp)
-    endif()
+        host/debug/debug_tools.cpp)
     target_compile_definitions(Yakumo PRIVATE MHP3RD_DEBUG_MENU=1)
-    message(STATUS "mhp3rd: developer tools compiled in (shown with MHP3RD_DEBUG_MENU=1)")
-
-    # The game's structures as the tools read and write them, on a buffer.
-    add_executable(mhp3rd_debug_tools_tests
-        tests/debug_tools_tests.cpp
-        host/debug/game_state.cpp
-        host/debug/quest_start.cpp
-        host/game/game_data.cpp)
-    target_include_directories(mhp3rd_debug_tools_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-    set_target_properties(mhp3rd_debug_tools_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-    if(PSPRECOMP_BUILD_TESTS)
-        add_test(NAME mhp3rd_debug_tools_tests COMMAND mhp3rd_debug_tools_tests)
-    endif()
+    message(STATUS "mhp3rd: developer tools compiled in (on with MHP3RD_DEBUG_MENU=1)")
 else()
     message(STATUS "mhp3rd: developer tools not compiled in")
 endif()
@@ -579,45 +525,8 @@ if(PSPRECOMP_BUILD_TESTS)
     add_test(NAME mhp3rd_screenshot_tests COMMAND mhp3rd_screenshot_tests)
 endif()
 
-# The game-text translations: the file format, and applying one to a text
-# block on a buffer. No game data and no disc image.
-add_executable(mhp3rd_text_tests
-    tests/text_tests.cpp
-    host/text/language.cpp)
-target_include_directories(mhp3rd_text_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-set_target_properties(mhp3rd_text_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if(PSPRECOMP_BUILD_TESTS)
-    add_test(NAME mhp3rd_text_tests COMMAND mhp3rd_text_tests)
-endif()
-
-# Exercise the live text read/decrypt/frame state machine with synthetic data.
-add_executable(mhp3rd_text_runtime_tests
-    tests/text_runtime_tests.cpp
-    host/text/language.cpp
-    host/text/translation.cpp
-    host/mods/mhp3rd_data_bin.cpp
-    host/mods/file_overlay.cpp
-    host/mods/mod_ini.cpp)
-target_include_directories(mhp3rd_text_runtime_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-target_compile_definitions(mhp3rd_text_runtime_tests PRIVATE MHP3RD_DEBUG_MENU=1)
-target_link_libraries(mhp3rd_text_runtime_tests PRIVATE psprecomp_core)
-set_target_properties(mhp3rd_text_runtime_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if(PSPRECOMP_BUILD_TESTS)
-    add_test(NAME mhp3rd_text_runtime_tests COMMAND mhp3rd_text_runtime_tests)
-    add_custom_target(mhp3rd_quest_translation_latency_tests DEPENDS mhp3rd_text_runtime_tests)
-    add_test(NAME mhp3rd_quest_translation_latency_tests COMMAND mhp3rd_text_runtime_tests --quest-display-latency)
-    set_tests_properties(mhp3rd_quest_translation_latency_tests PROPERTIES TIMEOUT 30 LABELS "translation;regression")
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND AND NOT ANDROID)
-        add_custom_target(mhp3rd_translation_smoke_launcher_tests)
-        add_test(NAME mhp3rd_translation_smoke_launcher_tests
-            COMMAND "${Python3_EXECUTABLE}" "${MHP3RD_PROFILE_DIR}/tests/translation_smoke_tests.py")
-        set_tests_properties(mhp3rd_translation_smoke_launcher_tests PROPERTIES TIMEOUT 30 LABELS "translation")
-    endif()
-endif()
-
-# Android's fd-based document copy also runs against a synthetic provider on
-# Unix hosts, without JNI or a device. Windows does not provide these fd APIs.
+# Android's display helpers also run against a stand-in library on Unix
+# hosts, without a device.
 if(UNIX)
     add_executable(mhp3rd_android_display_tests
         tests/android_display_tests.cpp host/platform/android_display.cpp)
@@ -631,16 +540,6 @@ if(UNIX)
             add_custom_target(mhp3rd_android_display_${scenario} DEPENDS mhp3rd_android_display_tests)
             add_test(NAME mhp3rd_android_display_${scenario} COMMAND mhp3rd_android_display_tests ${scenario})
         endforeach()
-    endif()
-    add_executable(mhp3rd_translation_document_tests
-        tests/translation_document_tests.cpp
-        host/platform/android_documents.cpp
-        host/text/language.cpp)
-    target_include_directories(mhp3rd_translation_document_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-    target_link_libraries(mhp3rd_translation_document_tests PRIVATE Threads::Threads)
-    set_target_properties(mhp3rd_translation_document_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-    if(PSPRECOMP_BUILD_TESTS)
-        add_test(NAME mhp3rd_translation_document_tests COMMAND mhp3rd_translation_document_tests)
     endif()
 endif()
 
@@ -733,36 +632,6 @@ target_include_directories(mhp3rd_gamepad_mapping_tests PRIVATE "${MHP3RD_PROFIL
 set_target_properties(mhp3rd_gamepad_mapping_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 if(PSPRECOMP_BUILD_TESTS)
     add_test(NAME mhp3rd_gamepad_mapping_tests COMMAND mhp3rd_gamepad_mapping_tests)
-endif()
-
-# Mods: the community's mod folders, choices, conflicts and import, the
-# DATA.BIN obfuscation and an archive served with mods' files. No game data.
-add_executable(mhp3rd_mods_tests
-    tests/mods_tests.cpp
-    host/mods/file_overlay.cpp
-    host/mods/mhp3rd_data_bin.cpp
-    host/mods/mhp3rd_mod_format.cpp
-    host/mods/mod_import.cpp
-    host/mods/mod_ini.cpp
-    host/mods/mod_library.cpp
-    host/mods/mod_session.cpp)
-target_include_directories(mhp3rd_mods_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-set_target_properties(mhp3rd_mods_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if(PSPRECOMP_BUILD_TESTS)
-    add_test(NAME mhp3rd_mods_tests COMMAND mhp3rd_mods_tests)
-endif()
-
-# Which file holds a piece of equipment's model, read from the game's tables
-# as equipment mods need it, on a buffer standing for guest memory. No game data.
-add_executable(mhp3rd_equipment_models_tests
-    tests/equipment_models_tests.cpp
-    host/game/game_data.cpp
-    host/game/equipment_models.cpp
-    host/game/layered_armor.cpp)
-target_include_directories(mhp3rd_equipment_models_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
-set_target_properties(mhp3rd_equipment_models_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if(PSPRECOMP_BUILD_TESTS)
-    add_test(NAME mhp3rd_equipment_models_tests COMMAND mhp3rd_equipment_models_tests)
 endif()
 
 # Renderer helpers that need no GPU.
@@ -1159,8 +1028,7 @@ if(MHP3RD_RENDERER_TESTS)
         $<TARGET_OBJECTS:mhp3rd_generated>)
     if(MHP3RD_DEBUG_MENU AND NOT MHP3RD_RELEASE)
         target_sources(mhp3rd_renderer_ui_tests PRIVATE
-            host/debug/debug_console.cpp host/debug/debug_tools.cpp
-            host/debug/game_state.cpp host/debug/quest_start.cpp host/ui/debug_screen.cpp)
+            host/debug/debug_console.cpp host/debug/debug_tools.cpp)
         target_compile_definitions(mhp3rd_renderer_ui_tests PRIVATE MHP3RD_DEBUG_MENU=1)
     endif()
     add_dependencies(mhp3rd_renderer_ui_tests mhp3rd_shaders mhp3rd_version)

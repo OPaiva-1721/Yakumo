@@ -9,15 +9,11 @@
 #include "ui/font_menu.hpp"
 #if defined(MHP3RD_DEBUG_MENU)
 #include "debug/debug_tools.hpp"
-#include "ui/debug_screen.hpp"
 #endif
 #include "ui/input_script.hpp"
 #include "ui/layer.hpp"
-#include "ui/layered_armor_screen.hpp"
-#include "ui/mods_screen.hpp"
 #include "ui/save_screen.hpp"
 #include "ui/texture_pack_screen.hpp"
-#include "ui/translation_screen.hpp"
 #include "ui/text_input.hpp"
 #include "ui/touch_editor.hpp"
 #include "ui/touch_overlay.hpp"
@@ -41,7 +37,6 @@
 #include "perf/frame_stats.hpp"
 #include "save_data/save_transfer.hpp"
 #include "settings/settings.hpp"
-#include "text/translation.hpp"
 #include "yakumo_version.hpp"
 #if defined(MHP3RD_ANDROID_APP)
 #include "platform/android_fatal.hpp"
@@ -108,7 +103,7 @@ int cycle(int value, int delta, int count) {
     return ((value + delta) % count + count) % count;
 }
 
-constexpr const char *kTabs[] = {"Video", "Audio", "Controls", "Network", "QoL", "Mods", "System", "Debug"};
+constexpr const char *kTabs[] = {"Video", "Audio", "Controls", "Network", "QoL", "System"};
 constexpr int kTabCount = static_cast<int>(std::size(kTabs));
 
 // Where the menu was when it last closed (#189): its page, how far that page
@@ -165,7 +160,6 @@ private:
     void preset_rows();
     void network();
     void qol();
-    void mods();
     void system();
     bool confirm_dialog();
 
@@ -193,7 +187,7 @@ bool Menu::frame() {
     }
     // A texture pack copy keeps the menu open until it ends.
     texture_pack_import_tick();
-    if (layer.take_menu_toggle() && !texture_pack_import_busy() && !mods_import_busy()) return false;
+    if (layer.take_menu_toggle() && !texture_pack_import_busy()) return false;
     const bool back = layer.take_back();
     // The pad's back button closes the menu too, once nothing is being edited.
     const ImGuiKey cancel = layer.confirm_south() ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown;
@@ -202,11 +196,7 @@ bool Menu::frame() {
     // Back closes the font list, or the save import and export, before it
     // closes the menu.
     bool font_list_was_open = (tab_ == 0 && (font_list_open() || texture_pack_screen_open())) ||
-        (tab_ == 2 && controllers_screen_open()) || (tab_ == 4 && layered_armor_screen_open()) ||
-        (tab_ == 5 && mods_screen_open()) || (tab_ == 6 && (save_screen_open() || translation_screen_open()));
-#if defined(MHP3RD_DEBUG_MENU)
-    font_list_was_open = font_list_was_open || (tab_ == 7 && debug_screen_open());
-#endif
+        (tab_ == 2 && controllers_screen_open()) || (tab_ == 5 && save_screen_open());
     back_ = back || pad_back;
 
     // The touch layout's editor takes the whole screen until it is done.
@@ -217,18 +207,13 @@ bool Menu::frame() {
     }
 
     begin_panel("##menu", "Ninja Impact", paused_ ? "Paused" : "Running", true);
-#if defined(MHP3RD_DEBUG_MENU)
-    // The developer tools' page, in developer builds run with MHP3RD_DEBUG_MENU=1.
-    const int tab_count = debug::enabled() ? 8 : 7;
-#else
-    const int tab_count = 7;
-#endif
-    // A page that is not there this run (Debug) gives way to the first.
+    const int tab_count = 6;
+    // A page saved from an older layout gives way to the first.
     if (tab_ >= tab_count) tab_ = 0;
     const bool opening = first_frame_;
     // A provider transfer owns the picker until it finishes; another page
-    // must not open a competing save/translation picker in the meantime.
-    const bool transfer = texture_pack_import_busy() || mods_import_busy();
+    // must not open a competing picker in the meantime.
+    const bool transfer = texture_pack_import_busy();
     ImGui::BeginDisabled(transfer);
     int requested_tab = tab_;
     tab_bar(kTabs, tab_count, requested_tab);
@@ -269,15 +254,6 @@ bool Menu::frame() {
     case 4:
         qol();
         break;
-    case 5:
-        mods();
-        break;
-#if defined(MHP3RD_DEBUG_MENU)
-    case 7:
-        debug_page(back_);
-        if (debug_page_resume()) close_ = true;
-        break;
-#endif
     default:
         system();
         break;
@@ -313,7 +289,7 @@ bool Menu::frame() {
     else if (binding == BindingsFocus::Reset)
         hints({{Control::Confirm, "Reset action"}, {Control::Back, "Back"}, {Control::Tabs, "Section"},
             {Control::Menu, "Resume"}});
-    else if (tab_ >= 5 || (tab_ == 4 && layered_armor_screen_open()) || binding == BindingsFocus::Fix)
+    else if (tab_ >= 5 || binding == BindingsFocus::Fix)
         hints({{Control::Confirm, "Select"}, {Control::Back, "Back"}, {Control::Tabs, "Section"},
             {Control::Menu, "Resume"}});
     else
@@ -327,7 +303,7 @@ bool Menu::frame() {
     } else if (!font_list_was_open && (((back || pad_back) && !was_editing_) || start)) {
         close_ = true;
     }
-    if (close_ && !quit_ && (texture_pack_import_busy() || mods_import_busy())) close_ = false;
+    if (close_ && !quit_ && texture_pack_import_busy()) close_ = false;
     if (!confirm_dialog()) return false;
     was_editing_ = ImGui::IsAnyItemActive();
     return !close_;
@@ -1447,34 +1423,7 @@ void Menu::network() {
 }
 
 void Menu::qol() {
-    if (layered_armor_screen(back_)) return;
     settings::Settings &s = settings::current();
-    section("Modern Features:");
-    {
-        const auto slot = static_cast<std::size_t>(input::Action::LockOn);
-        std::string bind = input::format(s.controls.keys[slot]);
-        const std::string pad = input::format(s.controls.pad[slot]);
-        if (!pad.empty()) bind += (bind.empty() ? "" : " / ") + pad;
-        const std::string help = "A tap of Lock on" +
-            (bind.empty() ? std::string(" (unbound: set it in Controls)") : " (" + bind + ")") +
-            " turns the quest camera to the nearest large monster and keeps it in view. Tap again for the next "
-            "large monster in the area; after the last one, a tap lets go. Turning the camera by hand, the D-pad's "
-            "camera and L let go too. Off, the bind does nothing.";
-        if (toggle_row("Lock-On", s.lock_on, options_for("input.lock_on", help.c_str()))) {
-            s.lock_on = !s.lock_on;
-            settings::save();
-        }
-        RowOptions o = options_for("input.lock_on_marker", "A small ring over the monster the camera is locked onto.");
-        if (!s.lock_on && !o.disabled) {
-            o.disabled = true;
-            o.note = "Lock-on is off";
-        }
-        if (toggle_row("Lock-On Marker", s.lock_on_marker, o)) {
-            s.lock_on_marker = !s.lock_on_marker;
-            settings::save();
-        }
-    }
-    layered_armor_row();
     section("Quality of Life:");
     {
         RowOptions o = options_for("video.fast_loading",
@@ -1587,8 +1536,6 @@ void Menu::qol() {
         restore("video.fast_loading", s.fast_loading, d.fast_loading);
         restore("video.fast_forward", s.fast_forward, d.fast_forward);
         restore("video.fast_forward_speed", s.fast_forward_speed, d.fast_forward_speed);
-        restore("input.lock_on", s.lock_on, d.lock_on);
-        restore("input.lock_on_marker", s.lock_on_marker, d.lock_on_marker);
         restore("experimental.free_camera", s.free_camera, d.free_camera);
         restore("experimental.free_camera_speed", s.free_camera_speed, d.free_camera_speed);
         restore("experimental.free_camera_hide_hud", s.free_camera_hide_hud, d.free_camera_hide_hud);
@@ -1596,17 +1543,7 @@ void Menu::qol() {
     }
 }
 
-void Menu::mods() {
-    mods_page(back_);
-    if (take_mods_restart_request()) {
-        install::request_restart_on_exit();
-        quit_ = true;
-        close_ = true;
-    }
-}
-
 void Menu::system() {
-    if (translation_screen(back_)) return;
     if (save_screen(back_)) {
         if (take_restart_request()) {
             install::request_restart_on_exit();
@@ -1695,27 +1632,6 @@ void Menu::system() {
             {false, {}, "Choose the disc image again, for example after moving it. The game closes first."}))
         confirm_ = Confirm::Setup;
 
-    section("Text:");
-    {
-        const TextLanguages &available = text_languages();
-        int index = 0;
-        for (std::size_t i = 0; i < available.codes.size(); ++i)
-            if (available.codes[i] == s.language || (s.language == "en" && available.codes[i] == "original"))
-                index = static_cast<int>(i);
-        const int delta = choice_row("Game Text Language", available.names[static_cast<std::size_t>(index)],
-            options_for("text.language",
-                "The language of the game's text itself, with the entries named in a "
-                "translation file of the translations folder replaced. Original keeps the "
-                "disc's own text, which is English on a patched image and Japanese on an "
-                "original one, and any entry a translation leaves out falls back to it. A "
-                "change applies the next time the game starts."));
-        if (delta != 0) {
-            index = cycle(index, delta, static_cast<int>(available.codes.size()));
-            s.language = available.codes[static_cast<std::size_t>(index)];
-            settings::save();
-        }
-        translation_rows();
-    }
 #if defined(MHP3RD_ANDROID_APP)
     // An Android app's data folder is out of the file manager's reach; its
     // log goes where the player picks instead, to send with a report.
