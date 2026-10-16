@@ -386,12 +386,13 @@ void test_action_layout() {
             return std::fabs(p.centre.x - x) < 1.0f && std::fabs(p.centre.y - y) < 1.0f &&
                 std::fabs(p.radius - radius) < 1.0f;
         };
-        check(near(Element::Attack, 640.0f, 250.0f, 56.0f) && near(Element::Secondary, 674.0f, 151.0f, 24.0f) &&
-                near(Element::Evade, 755.0f, 197.0f, 28.0f) && near(Element::Use, 745.0f, 306.0f, 28.0f),
-            "the face buttons sit where the design puts them");
-        check(near(Element::Stick, 214.0f, 266.0f, 64.0f) && near(Element::Item, 78.0f, 258.0f, 28.0f) &&
-                near(Element::Guard, 118.0f, 328.0f, 28.0f) && near(Element::Start, 33.0f, 60.0f, 22.0f),
-            "and the D-pad, L, R and Start too");
+        check(near(Element::Attack, 706.0f, 276.0f, 56.0f) && near(Element::Use, 600.0f, 250.0f, 29.0f) &&
+                near(Element::Evade, 620.0f, 345.0f, 32.0f) && near(Element::Secondary, 720.0f, 175.0f, 26.0f) &&
+                near(Element::Guard, 801.0f, 185.0f, 31.0f),
+            "the right thumb's buttons sit where the design puts them, R among them");
+        check(near(Element::Stick, 175.0f, 285.0f, 70.0f) && near(Element::Item, 56.0f, 156.0f, 26.0f) &&
+                near(Element::Start, 33.0f, 60.0f, 22.5f) && near(Element::Pause, 422.0f, 26.0f, 22.5f),
+            "and the D-pad, L, Start and the menu too");
         const auto &l = default_action_layout();
         check(l.at(Element::Attack).buttons == 0x2000u && l.at(Element::Secondary).buttons == 0x8000u &&
                 l.at(Element::Evade).buttons == 0x4000u && l.at(Element::Use).buttons == 0x1000u &&
@@ -404,7 +405,7 @@ void test_action_layout() {
             ++shown;
             targets = targets && phone.placed(static_cast<Element>(i)).radius * 2.0f >= 44.0f;
         }
-        check(shown == 8u && targets, "the design's eight controls are shown, each at least 44 px across");
+        check(shown == 9u && targets, "the design's nine controls are shown, each at least 44 px across");
     }
 
     Placement placement;
@@ -438,6 +439,24 @@ void test_floating_stick() {
     controls.set_floating_stick(false);
     controls.finger_down(2, landing, 1030u);
     check(!controls.stick_held(), "without floating, a free finger turns the camera");
+    controls.release_all();
+
+    // Naruto turns its camera with the D-pad: a free finger dragged holds it.
+    const Point free{area.left + area.width * 0.5f, area.top + area.height * 0.65f};
+    const float dead = ActionControls::kCameraDeadZone * area.height;
+    controls.finger_down(3, free, 2000u);
+    controls.finger_move(3, {free.x + dead * 0.5f, free.y}, 2010u);
+    check(controls.buttons(2010u) == 0u, "a small drag holds nothing");
+    controls.finger_move(3, {free.x + dead * 2.0f, free.y + dead * 0.3f}, 2020u);
+    check(controls.buttons(2020u) == 0x0020u, "a drag to the right holds D-pad Right, for the camera");
+    controls.finger_move(3, {free.x - dead * 2.0f, free.y - dead * 2.0f}, 2030u);
+    check(controls.buttons(2030u) == (0x0080u | 0x0010u), "a diagonal drag holds both ways");
+    controls.finger_up(3, 2040u);
+    check(controls.buttons(2040u) == 0u, "and lifting the finger lets go");
+    controls.set_camera_dpad(false);
+    controls.finger_down(4, free, 2050u);
+    controls.finger_move(4, {free.x + dead * 2.0f, free.y}, 2060u);
+    check(controls.buttons(2060u) == 0u, "unless the camera D-pad is off");
 }
 
 // The default layout with every element shown, the hidden ones too.
@@ -501,7 +520,7 @@ void test_action_fingers() {
     controls.finger_down(6, swipe, ms + 1000u);
     controls.finger_move(6, {swipe.x + reach * 0.3f, swipe.y}, ms + 1100u);
     controls.finger_move(6, {swipe.x + reach * 1.5f, swipe.y}, ms + 1400u);
-    check(controls.buttons(ms + 1400u) == 0u, "a slow drag in the swipe area presses nothing");
+    check(controls.buttons(ms + 1400u) == 0x0020u, "a slow drag in the swipe area holds D-pad Right, the camera");
     check(std::fabs(controls.take_camera_drag().x - reach * 1.5f) < 0.01f, "it turns the camera, all of it");
     controls.release_all();
 

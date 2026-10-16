@@ -126,6 +126,9 @@ public:
     // many milliseconds of landing; each press lasts kSwipePressMs.
     static constexpr float kSwipeDistance = 0.07f;
     static constexpr std::uint64_t kSwipeWindowMs = 280u;
+    // How far, in heights of the safe area, a free finger is dragged before
+    // it holds the D-pad that way (the camera in Naruto).
+    static constexpr float kCameraDeadZone = 0.06f;
     static constexpr std::uint64_t kSwipePressMs = 130u;
 
     void set_layout(const ActionLayout &layout, const Area &area, float scale);
@@ -150,6 +153,9 @@ public:
     // A floating stick: a finger landing free on the left part of the screen
     // takes the stick there, not only one landing on the stick.
     void set_floating_stick(bool floating) { floating_stick_ = floating; }
+    // A free finger dragged on the screen holds the D-pad in its direction,
+    // from where it landed: Naruto turns its camera with the D-pad.
+    void set_camera_dpad(bool on) { camera_dpad_ = on; }
     [[nodiscard]] bool stick_held() const { return stick_finger_.has_value(); }
     [[nodiscard]] bool held(Element element) const;
     // Camera drag since the last take, in pixels.
@@ -190,6 +196,7 @@ private:
     Point stick_thumb_{};
     std::optional<Point> stick_origin_;
     bool floating_stick_{true};
+    bool camera_dpad_{true};
     Point camera_drag_{};
     bool menu_tapped_{};
     int haptics_{};

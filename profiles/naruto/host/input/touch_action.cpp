@@ -15,15 +15,15 @@ constexpr std::uint16_t kUp = 0x0010u, kRight = 0x0020u, kDown = 0x0040u, kLeft 
 
 constexpr ElementInfo kInfo[kElements] = {
     {"stick", "Stick"},
-    {"item", "L"},
+    {"item", "L (camera)"},
     {"dpad_up", "D-pad Up"},
     {"dpad_down", "D-pad Down"},
-    {"attack", "Main attack"},
-    {"secondary", "Square"},
+    {"attack", "Combo (○)"},
+    {"secondary", "Shuriken (□)"},
     {"combo", "Special (R + attack)"},
-    {"evade", "Cross"},
-    {"use", "Triangle"},
-    {"guard", "Guard"},
+    {"evade", "Jump (×)"},
+    {"use", "Chakra (△)"},
+    {"guard", "Guard (R)"},
     {"special", "Guard (second)"},
     {"pause", "Pause (menu)"},
     {"start", "Start"},
@@ -40,12 +40,12 @@ ActionLayout make_default() {
         const auto q = [](float v) { return std::round(v * 1000.0f) / 1000.0f; };
         l.at(e) = {anchor, q(x), q(y), q(size), buttons, true};
     };
-    // Laid out for Naruto's fights, from a design for an 844x390 phone in
-    // landscape: positions there, in pixels, divided by its height (390).
-    // Left anchored from the left edge, right anchored from the right one
-    // (844 - x). Every element is at least 44 px across.
+    // Laid out for Naruto's fights, drawn for an 844x390 phone in landscape:
+    // positions there, in pixels, divided by its height (390); left anchored
+    // from the left edge, right anchored from the right one (844 - x). Every
+    // element is at least 44 px across.
     constexpr float kHeight = 390.0f, kWidth = 844.0f;
-    // A design element: its box's top-left corner and size, in pixels.
+    // An element of the drawing: its box's top-left corner and size, in pixels.
     const auto left = [&](Element e, float x, float y, float size, std::uint16_t buttons) {
         set(e, Anchor::Left, (x + size * 0.5f) / kHeight, (y + size * 0.5f) / kHeight, size * 0.5f / kHeight, buttons);
     };
@@ -53,31 +53,34 @@ ActionLayout make_default() {
         set(e, Anchor::Right, (kWidth - x - size * 0.5f) / kHeight, (y + size * 0.5f) / kHeight,
             size * 0.5f / kHeight, buttons);
     };
-    // The left thumb: Start at the top corner (a 60x40 pill, touched as a
-    // 44 px circle), L and R by the edge, the D-pad (the stick, drawn as a
-    // cross) low and inward.
+    // The left thumb moves: the D-pad (the stick, drawn as a cross) where it
+    // rests. Start at the top corner (a 60x40 pill, touched as a 45 px
+    // circle) and L (centre the camera, seldom needed) above, out of its way.
+    left(Element::Stick, 105.0f, 215.0f, 140.0f, 0u);
     set(Element::Start, Anchor::Left, 33.0f / kHeight, 60.0f / kHeight, 22.5f / kHeight, kStart);
-    left(Element::Item, 50.0f, 230.0f, 56.0f, kL);
-    left(Element::Guard, 90.0f, 300.0f, 56.0f, kR);
-    left(Element::Stick, 150.0f, 202.0f, 128.0f, 0u);
-    // The right thumb: ○ large in the middle, the main attack; □ above it, ×
-    // to its right, △ below that.
-    right(Element::Attack, 584.0f, 194.0f, 112.0f, kCircle);
-    right(Element::Secondary, 650.0f, 127.0f, 48.0f, kSquare);
-    right(Element::Evade, 727.0f, 169.0f, 56.0f, kCross);
-    right(Element::Use, 717.0f, 278.0f, 56.0f, kTriangle);
-    // Not in the design; kept in the editor, hidden. The menu opens with
-    // Android's Back as well.
+    left(Element::Item, 30.0f, 130.0f, 52.0f, kL);
+    // The right thumb fights: ○ (combos) large where it rests, with what goes
+    // with it a slide away. △ (chakra) on its left, to charge and go on; ×
+    // (jump) below; □ (shuriken) above; R (guard and substitution) at its
+    // upper right, so guarding never stops the left thumb moving.
+    right(Element::Attack, 650.0f, 220.0f, 112.0f, kCircle);
+    right(Element::Use, 571.0f, 221.0f, 58.0f, kTriangle);
+    right(Element::Evade, 588.0f, 313.0f, 64.0f, kCross);
+    right(Element::Secondary, 694.0f, 149.0f, 52.0f, kSquare);
+    right(Element::Guard, 770.0f, 154.0f, 62.0f, kR);
+    // The port's menu, small at the top middle: Android's Back gesture is
+    // easy to set off, and hard to find, in a fight.
+    set(Element::Pause, Anchor::Centre, 0.0f, 26.0f / kHeight, 22.5f / kHeight, 0u);
+    // Kept in the editor, hidden.
     set(Element::DpadUp, Anchor::Left, 0.30f, 0.10f, 0.04f, kUp);
     set(Element::DpadDown, Anchor::Left, 0.42f, 0.10f, 0.04f, kDown);
     set(Element::Combo, Anchor::Right, 0.42f, 0.10f, 0.055f, static_cast<std::uint16_t>(kR | kSquare));
     set(Element::Special, Anchor::Right, 0.30f, 0.10f, 0.05f, kR);
-    set(Element::Pause, Anchor::Right, 0.055f, 0.08f, 0.035f, 0u);
     set(Element::Select, Anchor::Right, 0.055f, 0.20f, 0.035f, kSelect);
     set(Element::Swipe, Anchor::Centre, 0.0f, 0.30f, 0.09f, 0u);
     set(Element::R3, Anchor::Right, 0.075f, 0.925f, 0.04f, 0u);
-    for (const Element e : {Element::DpadUp, Element::DpadDown, Element::Combo, Element::Special, Element::Pause,
-             Element::Select, Element::Swipe, Element::R3})
+    for (const Element e : {Element::DpadUp, Element::DpadDown, Element::Combo, Element::Special, Element::Select,
+             Element::Swipe, Element::R3})
         l.at(e).shown = false;
     return l;
 }
@@ -422,6 +425,18 @@ std::uint16_t ActionControls::buttons(std::uint64_t ms) const {
         if (finger.used && finger.role == Role::Button && finger.over) buttons |= layout_.at(finger.element).buttons;
     if (ms < swipe_until_[0]) buttons |= kLeft;
     if (ms < swipe_until_[1]) buttons |= kRight;
+    if (camera_dpad_) {
+        const float dead = kCameraDeadZone * std::max(area_.height, 1.0f);
+        for (const Finger &finger : fingers_) {
+            if (!finger.used || finger.role != Role::Camera) continue;
+            // Each way held past the dead zone; both when the drag is
+            // diagonal enough, so the camera can turn and tilt at once.
+            const float dx = finger.last.x - finger.start.x;
+            const float dy = finger.last.y - finger.start.y;
+            if (std::fabs(dx) > dead && std::fabs(dx) >= std::fabs(dy) * 0.5f) buttons |= dx > 0.0f ? kRight : kLeft;
+            if (std::fabs(dy) > dead && std::fabs(dy) >= std::fabs(dx) * 0.5f) buttons |= dy > 0.0f ? kDown : kUp;
+        }
+    }
     return buttons;
 }
 
