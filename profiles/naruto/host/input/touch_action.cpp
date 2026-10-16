@@ -15,16 +15,16 @@ constexpr std::uint16_t kUp = 0x0010u, kRight = 0x0020u, kDown = 0x0040u, kLeft 
 
 constexpr ElementInfo kInfo[kElements] = {
     {"stick", "Stick"},
-    {"item", "Item pouch"},
+    {"item", "L"},
     {"dpad_up", "D-pad Up"},
     {"dpad_down", "D-pad Down"},
     {"attack", "Attack"},
-    {"secondary", "Second attack"},
-    {"combo", "Combined attack"},
-    {"evade", "Evade"},
-    {"use", "Use / sheathe"},
+    {"secondary", "Ninjutsu"},
+    {"combo", "Special (R + attack)"},
+    {"evade", "Jump"},
+    {"use", "Triangle"},
     {"guard", "Guard"},
-    {"special", "Special"},
+    {"special", "Guard (second)"},
     {"pause", "Pause (menu)"},
     {"start", "Start"},
     {"select", "Select"},
@@ -37,21 +37,25 @@ ActionLayout make_default() {
     const auto set = [&](Element e, Anchor anchor, float x, float y, float size, std::uint16_t buttons) {
         l.at(e) = {anchor, x, y, size, buttons, true};
     };
-    // The left thumb: the stick low, the pouch above it at the edge, D-pad
-    // Up and Down beside it.
-    set(Element::Stick, Anchor::Left, 0.30f, 0.72f, 0.13f, 0u);
-    set(Element::Item, Anchor::Left, 0.12f, 0.47f, 0.05f, kL);
-    set(Element::DpadUp, Anchor::Left, 0.54f, 0.66f, 0.042f, kUp);
-    set(Element::DpadDown, Anchor::Left, 0.54f, 0.82f, 0.042f, kDown);
-    // The right thumb: the attack large in the middle of a cluster, high
-    // enough to leave the game's item bar in the bottom right corner clear.
-    set(Element::Attack, Anchor::Right, 0.33f, 0.60f, 0.09f, kTriangle);
-    set(Element::Secondary, Anchor::Right, 0.40f, 0.36f, 0.055f, kCircle);
-    set(Element::Combo, Anchor::Right, 0.54f, 0.47f, 0.055f, static_cast<std::uint16_t>(kTriangle | kCircle));
-    set(Element::Evade, Anchor::Right, 0.54f, 0.67f, 0.055f, kCross);
-    set(Element::Use, Anchor::Right, 0.70f, 0.74f, 0.04f, kSquare);
-    set(Element::Guard, Anchor::Right, 0.13f, 0.44f, 0.055f, kR);
-    set(Element::Special, Anchor::Right, 0.13f, 0.64f, 0.055f, kR);
+    // Laid out for Naruto's fights. The left thumb: a large stick low, L
+    // above it at the edge, D-pad Up and Down (the menus) beside it.
+    set(Element::Stick, Anchor::Left, 0.29f, 0.70f, 0.14f, 0u);
+    set(Element::Item, Anchor::Left, 0.11f, 0.40f, 0.055f, kL);
+    set(Element::DpadUp, Anchor::Left, 0.55f, 0.66f, 0.04f, kUp);
+    set(Element::DpadDown, Anchor::Left, 0.55f, 0.82f, 0.04f, kDown);
+    // The right thumb: an arc it reaches without moving the hand. Attack (□)
+    // large in the middle; jump (×) where the thumb rests, low at the edge;
+    // ninjutsu (○) above it; △ above the attack; guard (R) and the special
+    // (R and □ in one frame) inside the arc.
+    set(Element::Attack, Anchor::Right, 0.36f, 0.64f, 0.10f, kSquare);
+    set(Element::Evade, Anchor::Right, 0.15f, 0.80f, 0.075f, kCross);
+    set(Element::Secondary, Anchor::Right, 0.15f, 0.52f, 0.07f, kCircle);
+    set(Element::Use, Anchor::Right, 0.36f, 0.38f, 0.06f, kTriangle);
+    set(Element::Combo, Anchor::Right, 0.57f, 0.50f, 0.055f, static_cast<std::uint16_t>(kR | kSquare));
+    set(Element::Guard, Anchor::Right, 0.58f, 0.78f, 0.06f, kR);
+    // A second guard is not needed here; it stays available in the editor.
+    set(Element::Special, Anchor::Right, 0.30f, 0.18f, 0.05f, kR);
+    l.at(Element::Special).shown = false;
     // Small, at the right edge near the top.
     set(Element::Pause, Anchor::Right, 0.055f, 0.08f, 0.035f, 0u);
     set(Element::Start, Anchor::Right, 0.055f, 0.18f, 0.035f, kStart);
@@ -127,6 +131,7 @@ const std::vector<ButtonChoice> &button_choices() {
         {static_cast<std::uint16_t>(kR | kTriangle), "R + △"},
         {static_cast<std::uint16_t>(kR | kCircle), "R + ○"},
         {static_cast<std::uint16_t>(kR | kCross), "R + ×"},
+        {static_cast<std::uint16_t>(kR | kSquare), "R + □"},
         {static_cast<std::uint16_t>(kL | kCircle), "L + ○"},
         {static_cast<std::uint16_t>(kL | kSquare), "L + □"},
         {static_cast<std::uint16_t>(kTriangle | kCross), "△ + ×"},

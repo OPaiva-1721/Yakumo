@@ -377,7 +377,7 @@ void test_action_layout() {
     }
     Placement placement;
     check(!parse("middle 0 0 0.1 0x1000 1", placement) && !parse("left 0 0", placement), "bad placements are refused");
-    check(default_action_layout().at(Element::Combo).buttons == 0x3000u, "the combined attack is △ and ○ together");
+    check(default_action_layout().at(Element::Combo).buttons == 0x8200u, "the special is R and □ together");
 
     const Area area = safe_area(2000.0f, 1000.0f, {});
     const Placement moved =
@@ -404,13 +404,13 @@ void test_action_fingers() {
     check(!controls.held(Element::R3), "Action R3 releases with its finger");
 
     controls.finger_down(1, centre(Element::Attack), ms);
-    check(controls.buttons(ms) == 0x1000u && controls.held(Element::Attack), "the attack presses △");
+    check(controls.buttons(ms) == 0x8000u && controls.held(Element::Attack), "the attack presses □");
     check(controls.take_haptics() == 1 && controls.take_haptics() == 0, "a press gives one haptic tick");
     controls.finger_move(1, centre(Element::Evade), ms + 10u);
     check(controls.buttons(ms) == 0x4000u, "a thumb slides from the attack to evade");
     controls.finger_up(1, ms + 20u);
     controls.finger_down(2, centre(Element::Combo), ms);
-    check(controls.buttons(ms) == 0x3000u, "the combined attack presses △ and ○ in the same frame");
+    check(controls.buttons(ms) == 0x8200u, "the special presses R and □ in the same frame");
 
     // The stick, a button and the camera at once.
     const Point stick = centre(Element::Stick);
@@ -419,7 +419,7 @@ void test_action_fingers() {
     controls.finger_down(4, {1000.0f, 900.0f}, ms);
     controls.finger_move(4, {1050.0f, 880.0f}, ms + 5u);
     check(controls.stick().x > 0.99f && std::fabs(controls.stick().y) < 1e-3f, "the stick is fixed where it is placed");
-    check(controls.buttons(ms) == 0x3000u, "while a button is held");
+    check(controls.buttons(ms) == 0x8200u, "while a button is held");
     const Point drag = controls.take_camera_drag();
     check(drag.x == 50.0f && drag.y == -20.0f, "and a free finger turns the camera");
     controls.finger_up(3, ms);

@@ -97,6 +97,45 @@ void arrow_arc(ImDrawList *list, ImVec2 c, float radius, float a0, float a1, ImU
 }
 
 // Each element's icon in a circle of radius r: our own simple shapes.
+// A PSP face button's symbol in its colour, or L or R, for an element that
+// presses just that button: Naruto's own prompts show these symbols, so the
+// buttons that fight say the same. False for anything else.
+bool draw_psp_glyph(ImDrawList *list, std::uint16_t buttons, ImVec2 c, float r, float alpha, float t) {
+    const float s = r * 0.42f;
+    const float w = t * 1.6f;
+    switch (buttons) {
+    case 0x1000u: { // triangle
+        const ImU32 ink = colour(96, 214, 170, alpha);
+        list->AddTriangle({c.x, c.y - s}, {c.x + s * 0.95f, c.y + s * 0.7f}, {c.x - s * 0.95f, c.y + s * 0.7f}, ink, w);
+        return true;
+    }
+    case 0x2000u: // circle
+        list->AddCircle(c, s * 0.9f, colour(240, 110, 120, alpha), 0, w);
+        return true;
+    case 0x4000u: { // cross
+        const ImU32 ink = colour(130, 170, 240, alpha);
+        list->AddLine({c.x - s * 0.8f, c.y - s * 0.8f}, {c.x + s * 0.8f, c.y + s * 0.8f}, ink, w);
+        list->AddLine({c.x - s * 0.8f, c.y + s * 0.8f}, {c.x + s * 0.8f, c.y - s * 0.8f}, ink, w);
+        return true;
+    }
+    case 0x8000u: // square
+        list->AddRect({c.x - s * 0.8f, c.y - s * 0.8f}, {c.x + s * 0.8f, c.y + s * 0.8f}, colour(230, 140, 210, alpha),
+            0.0f, 0, w);
+        return true;
+    case 0x0100u:
+    case 0x0200u: {
+        const char *text = buttons == 0x0100u ? "L" : "R";
+        ImFont *font = ImGui::GetFont();
+        const float size = r * 0.9f;
+        const ImVec2 extent = font->CalcTextSizeA(size, 1e9f, 0.0f, text);
+        list->AddText(font, size, {c.x - extent.x * 0.5f, c.y - extent.y * 0.5f}, colour(255, 255, 255, alpha), text);
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 void draw_icon(ImDrawList *list, Element element, ImVec2 c, float r, ImU32 ink, float t) {
     const float s = r * 0.5f;
     constexpr float kRoot = 0.70710678f;
@@ -231,13 +270,17 @@ void draw_action_element(ImDrawList *list, Element element, const input::touch::
         list->AddCircle(knob, r * 0.42f, colour(0, 0, 0, base * 0.4f), 0, t);
     } else {
         if (look.held) list->AddCircleFilled(c, r * 0.94f, colour(255, 255, 255, std::max(base, 0.5f) * 0.55f));
-        draw_icon(list, element, c, r, white, t);
+        // A button that presses one PSP button shows that button's symbol;
+        // the attack keeps its blade (with □ beside it) and the rest their icons.
+        const bool glyph = element != Element::Attack && input::touch::rebindable(element) &&
+            draw_psp_glyph(list, placement.buttons, c, r, base * (look.held ? 1.0f : 0.9f), t);
+        if (!glyph) draw_icon(list, element, c, r, white, t);
         // What it presses, small beside it.
         // The icons of the D-pad and Start and Select say what they press;
         // the others', or one rebound, need the PSP's name beside them.
         const bool plain = element == Element::DpadUp || element == Element::DpadDown || element == Element::Start ||
             element == Element::Select;
-        if (input::touch::rebindable(element) &&
+        if (!glyph && input::touch::rebindable(element) &&
             (!plain || placement.buttons != input::touch::default_action_layout().at(element).buttons)) {
             const std::string text = input::touch::buttons_label(placement.buttons);
             ImFont *font = ImGui::GetFont();
