@@ -65,7 +65,7 @@ std::vector<std::uint8_t> read_file(IsoImage &iso, const IsoImage::Entry &entry)
     std::vector<std::uint8_t> data(entry.size);
     if (iso.read(static_cast<std::uint64_t>(entry.lba) * IsoImage::kSectorSize, data) != data.size())
         throw InstallError("The disc image is incomplete: it ends before the files it lists. The file may be truncated "
-                           "or damaged; make the image again.");
+                           "or damaged; make the image again.", Problem::Io);
     return data;
 }
 
@@ -102,15 +102,15 @@ Inspection inspect(const std::filesystem::path &path) {
     const std::string name = display_name(path);
     std::error_code ec;
     if (!std::filesystem::is_regular_file(path, ec))
-        throw InstallError("\"" + path_to_utf8(path) + "\" is not a file Ninja Impact can open.");
+        throw InstallError("\"" + path_to_utf8(path) + "\" is not a file Ninja Impact can open.", Problem::Io);
     {
         std::ifstream in(path, std::ios::binary);
         std::array<char, 4> magic{};
-        if (!in.read(magic.data(), magic.size())) throw InstallError("\"" + name + "\" is empty or cannot be read.");
+        if (!in.read(magic.data(), magic.size())) throw InstallError("\"" + name + "\" is empty or cannot be read.", Problem::Io);
         if (std::memcmp(magic.data(), "CISO", 4u) == 0 || std::memcmp(magic.data(), "ZISO", 4u) == 0)
             throw InstallError("\"" + name +
                 "\" is a compressed image. Ninja Impact needs an uncompressed .iso image of the "
-                "disc; decompress it first.");
+                "disc; decompress it first.", Problem::Compressed);
     }
 
     std::optional<IsoImage> iso;
@@ -119,22 +119,22 @@ Inspection inspect(const std::filesystem::path &path) {
     } catch (const std::exception &) {
         throw InstallError("\"" + name +
             "\" is not a disc image Ninja Impact can read. Choose an uncompressed .iso image "
-            "of the game's PSP disc.");
+            "of the game's PSP disc.", Problem::NotPsp);
     }
 
     const auto sfo_entry = iso->find(kParamSfoPathOnDisc);
     if (!sfo_entry || sfo_entry->directory) {
         if (iso->find("PS3_GAME/PARAM.SFO"))
             throw InstallError("\"" + name + "\" is a PlayStation 3 disc image. Ninja Impact needs the PSP disc image of " +
-                kGameTitle + ": an .iso whose top level holds a PSP_GAME folder.");
-        throw InstallError("\"" + name + "\" is not a PSP game disc image: it has no PSP_GAME/PARAM.SFO.");
+                kGameTitle + ": an .iso whose top level holds a PSP_GAME folder.", Problem::NotPsp);
+        throw InstallError("\"" + name + "\" is not a PSP game disc image: it has no PSP_GAME/PARAM.SFO.", Problem::NotPsp);
     }
     const auto sfo = parse_sfo(read_file(*iso, *sfo_entry));
     const auto disc_id = sfo.find("DISC_ID");
     if (disc_id == sfo.end())
         throw InstallError("\"" + name +
             "\" has no disc id in PSP_GAME/PARAM.SFO, so it is not an image Ninja Impact "
-            "supports.");
+            "supports.", Problem::NotPsp);
     if (disc_id->second != kDiscId) {
         const auto title = sfo.find("TITLE");
         std::string what = "\"" + name + "\" is ";
@@ -143,20 +143,20 @@ Inspection inspect(const std::filesystem::path &path) {
         what += ". Ninja Impact supports only " + std::string(kGameTitle) + ", the European release with disc id " +
             kDiscIdDisplay + ".";
         what += " Other releases and regions are not supported.";
-        throw InstallError(what);
+        throw InstallError(what, Problem::WrongGame);
     }
 
     const auto eboot_entry = iso->find(kExecutablePathOnDisc);
     if (!eboot_entry || eboot_entry->directory)
         throw InstallError("\"" + name +
             "\" has the right disc id but no PSP_GAME/SYSDIR/EBOOT.BIN. The image is "
-            "incomplete or modified; make it again from your disc.");
+            "incomplete or modified; make it again from your disc.", Problem::WrongGame);
     Inspection result;
     result.eboot_bin = read_file(*iso, *eboot_entry);
     if (psprecomp::sha256_bytes(result.eboot_bin) != kEncryptedExecutableSha256)
         throw InstallError("\"" + name + "\" is " + kGameTitle + " (" + kDiscIdDisplay +
             "), but its executable is not the version Ninja Impact supports. The image may be patched, "
-            "modified or damaged; make it again from an unmodified disc.");
+            "modified or damaged; make it again from an unmodified disc.", Problem::WrongGame);
     result.info.size_bytes = iso->size_bytes();
     return result;
 }
@@ -166,8 +166,8 @@ void copy_with_progress(const std::filesystem::path &from, const std::filesystem
     const std::string stage = "Copying the disc image";
     std::ifstream in(from, std::ios::binary);
     std::ofstream out(to, std::ios::binary | std::ios::trunc);
-    if (!in) throw InstallError("Cannot read \"" + path_to_utf8(from) + "\".");
-    if (!out) throw InstallError("Cannot write \"" + path_to_utf8(to) + "\".");
+    if (!in) throw InstallError("Cannot read \"" + path_to_utf8(from) + "\".", Problem::Io);
+    if (!out) throw InstallError("Cannot write \"" + path_to_utf8(to) + "\".", Problem::Io);
     std::vector<char> buffer(8u * kMiB);
     std::uint64_t done = 0u;
     progress(stage, 0u, total);
@@ -176,19 +176,19 @@ void copy_with_progress(const std::filesystem::path &from, const std::filesystem
         const std::streamsize got = in.gcount();
         if (got <= 0) break;
         if (!out.write(buffer.data(), got))
-            throw InstallError("Writing the copy of the disc image failed. Check that the disk has free space.");
+            throw InstallError("Writing the copy of the disc image failed. Check that the disk has free space.", Problem::Io);
         done += static_cast<std::uint64_t>(got);
         progress(stage, done, total);
     }
     out.close();
-    if (!out || done != total) throw InstallError("Copying the disc image failed after " + megabytes(done) + ".");
+    if (!out || done != total) throw InstallError("Copying the disc image failed after " + megabytes(done) + ".", Problem::Io);
 }
 
 void write_file(const std::filesystem::path &path, const std::vector<std::uint8_t> &data) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
     out.close();
-    if (!out) throw InstallError("Cannot write \"" + path_to_utf8(path) + "\".");
+    if (!out) throw InstallError("Cannot write \"" + path_to_utf8(path) + "\".", Problem::Io);
 }
 
 bool same_file(const std::filesystem::path &a, const std::filesystem::path &b) {
@@ -211,7 +211,7 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
         if (space && *space < needed)
             throw InstallError("Not enough free space to copy the disc image: it needs " + megabytes(needed) +
                 " in \"" + path_to_utf8(data_dir) + "\" and " + megabytes(*space) +
-                " is free. Free up space, or choose to use the image where it is.");
+                " is free. Free up space, or choose to use the image where it is.", Problem::NoSpace);
         try {
             copy_with_progress(image, copying, inspection.info.size_bytes, progress);
         } catch (...) {
@@ -224,7 +224,7 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
         } catch (const InstallError &) {
             std::filesystem::remove(copying, ec);
             throw InstallError("The copy of the disc image does not match the original. Check the disk and try "
-                               "again.");
+                               "again.", Problem::Io);
         }
     }
 
@@ -265,7 +265,7 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
         } catch (const MissingTagKey &) {
             throw InstallError("keys.txt does not hold the key this disc's EBOOT.BIN needs (its tag is "
                                "0xD91613F0). Add it to keys.txt and choose the disc image with keys.txt again, "
-                               "or choose the EBOOT.ELF that PPSSPP dumps from the game with them.");
+                               "or choose the EBOOT.ELF that PPSSPP dumps from the game with them.", Problem::MissingTagKey);
         }
         write_file(executable_partial, executable);
     }
@@ -293,6 +293,16 @@ ImageInfo check_image(const std::filesystem::path &path) {
     return inspect(path).info;
 }
 
+bool keys_unlock_executable(const std::filesystem::path &image, std::string_view keys_text) {
+    const Inspection inspection = inspect(image);
+    try {
+        (void)prepare_executable(inspection.eboot_bin, pgd::all_keys_in(keys_text));
+        return true;
+    } catch (const MissingTagKey &) {
+        return false;
+    }
+}
+
 void install(const std::filesystem::path &image, ImageStorage storage, const std::filesystem::path &data_dir,
     const ProgressFn &progress) {
     try {
@@ -304,7 +314,7 @@ void install(const std::filesystem::path &image, ImageStorage storage, const std
         std::filesystem::remove(data_dir / (std::string(kExecutableFile) + ".part"), ec);
         throw;
     } catch (const std::filesystem::filesystem_error &e) {
-        throw InstallError("Setup could not write to \"" + path_to_utf8(data_dir) + "\": " + e.code().message() + ".");
+        throw InstallError("Setup could not write to \"" + path_to_utf8(data_dir) + "\": " + e.code().message() + ".", Problem::Io);
     } catch (const std::exception &e) {
         throw InstallError(std::string("Setup failed: ") + e.what() + ".");
     }
@@ -318,7 +328,7 @@ bool is_document_uri(const std::filesystem::path &image) {
 std::filesystem::path copy_image_document(
     const std::string &uri, const std::filesystem::path &data_dir, const ProgressFn &progress) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.", Problem::Io);
     struct stat info{};
     const std::uint64_t size = ::fstat(fd, &info) == 0 ? static_cast<std::uint64_t>(info.st_size) : 0u;
     // The copy, with room to spare for the executable prepared from it.
@@ -326,7 +336,7 @@ std::filesystem::path copy_image_document(
     if (const auto space = available_space(data_dir); space && size != 0u && *space < needed) {
         ::close(fd);
         throw InstallError("Not enough free space to copy the disc image: it needs " + megabytes(needed) + " and " +
-            megabytes(*space) + " is free on this device.");
+            megabytes(*space) + " is free on this device.", Problem::NoSpace);
     }
     std::error_code ec;
     std::filesystem::create_directories(data_dir, ec);
@@ -341,17 +351,17 @@ std::filesystem::path copy_image_document(
         for (;;) {
             const ssize_t got = ::read(fd, buffer.data(), buffer.size());
             if (got < 0 && errno == EINTR) continue;
-            if (got < 0) throw InstallError("Reading the disc image failed. Choose it again.");
+            if (got < 0) throw InstallError("Reading the disc image failed. Choose it again.", Problem::Io);
             if (got == 0) break;
             out.write(buffer.data(), got);
             if (!out)
-                throw InstallError("Writing the copy of the disc image failed. Check that the device has free space.");
+                throw InstallError("Writing the copy of the disc image failed. Check that the device has free space.", Problem::Io);
             done += static_cast<std::uint64_t>(got);
             progress(stage, done, size);
         }
         out.close();
         if (!out)
-            throw InstallError("Writing the copy of the disc image failed. Check that the device has free space.");
+            throw InstallError("Writing the copy of the disc image failed. Check that the device has free space.", Problem::Io);
     } catch (...) {
         ::close(fd);
         std::filesystem::remove(partial, ec);
@@ -359,7 +369,7 @@ std::filesystem::path copy_image_document(
     }
     ::close(fd);
     std::filesystem::rename(partial, target, ec);
-    if (ec) throw InstallError("Could not keep the copy of the disc image: " + ec.message() + ".");
+    if (ec) throw InstallError("Could not keep the copy of the disc image: " + ec.message() + ".", Problem::Io);
     return target;
 }
 #endif
@@ -371,7 +381,7 @@ constexpr std::uint64_t kLargestKeysFile = 64u * 1024u;
 
 std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t limit) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.", Problem::Io);
     std::vector<std::uint8_t> data;
     std::vector<std::uint8_t> buffer(1u << 20);
     for (;;) {
@@ -379,13 +389,13 @@ std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t li
         if (got < 0 && errno == EINTR) continue;
         if (got < 0) {
             ::close(fd);
-            throw InstallError("Reading a chosen file failed. Choose it again.");
+            throw InstallError("Reading a chosen file failed. Choose it again.", Problem::Io);
         }
         if (got == 0) break;
         data.insert(data.end(), buffer.begin(), buffer.begin() + got);
         if (data.size() > limit) {
             ::close(fd);
-            throw InstallError("A chosen file is larger than expected.");
+            throw InstallError("A chosen file is larger than expected.", Problem::Io);
         }
     }
     ::close(fd);
@@ -395,7 +405,7 @@ std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t li
 
 DocumentKind classify_document(const std::string &uri) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.", Problem::Io);
     struct stat info{};
     const std::uint64_t size = ::fstat(fd, &info) == 0 ? static_cast<std::uint64_t>(info.st_size) : 0u;
     std::array<unsigned char, 4> magic{};
@@ -414,7 +424,7 @@ void import_document(const std::string &uri, DocumentKind kind, const std::files
         const std::vector<std::uint8_t> executable = read_document(uri, 64u << 20);
         if (psprecomp::sha256_bytes(executable) != kExecutableSha256)
             throw InstallError("The chosen EBOOT.ELF is not the decrypted executable of " + std::string(kGameTitle) +
-                " (" + kDiscIdDisplay + ").");
+                " (" + kDiscIdDisplay + ").", Problem::WrongGame);
         write_file(data_dir / kExecutableFile, executable);
         std::cout << "[setup] imported " << kExecutableFile << std::endl;
     } else if (kind == DocumentKind::KeysFile) {

@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 // First-run installer: checks the player's disc image, copies it into the
 // per-user data directory (or records where it is), and prepares the game's
@@ -17,10 +18,28 @@
 // (host/ui), or SDL message boxes where those cannot be shown.
 namespace mhp3rd::install {
 
+// What went wrong, for an interface that words it itself (the launcher).
+// The numbers are part of the launcher API (platform/launcher_api.hpp): do
+// not reorder.
+enum class Problem : int {
+    Other = 1,
+    WrongGame = 2,     // another game, region or a modified executable
+    Compressed = 3,    // CSO/ZSO or an archive
+    NotPsp = 4,        // not a PSP disc image
+    MissingTagKey = 5, // keys.txt lacks the EBOOT.BIN key
+    NoSpace = 6,
+    Io = 7,
+};
+
 // A problem the player can act on; what() is written for them.
 class InstallError final : public std::runtime_error {
 public:
-    explicit InstallError(const std::string &message) : std::runtime_error(message) {}
+    explicit InstallError(const std::string &message, Problem problem = Problem::Other)
+        : std::runtime_error(message), problem_(problem) {}
+    [[nodiscard]] Problem problem() const noexcept { return problem_; }
+
+private:
+    Problem problem_;
 };
 
 // Thrown from a progress callback to stop an installation the player
@@ -43,6 +62,11 @@ struct ImageInfo {
 // id in PARAM.SFO and the hash of the encrypted executable. Throws
 // InstallError saying plainly what is wrong otherwise.
 ImageInfo check_image(const std::filesystem::path &path);
+
+// Whether the keys file text holds the key that decrypts this image's
+// EBOOT.BIN. Throws InstallError when the image itself is not the supported
+// one, as check_image does.
+[[nodiscard]] bool keys_unlock_executable(const std::filesystem::path &image, std::string_view keys_text);
 
 // Called with the bytes done so far and the total; stage names the step.
 using ProgressFn = std::function<void(const std::string &stage, std::uint64_t done, std::uint64_t total)>;
