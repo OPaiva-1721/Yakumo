@@ -1,4 +1,4 @@
-package io.github.teamgdb.yakumo;
+package io.github.opaiva1721.ninjaimpact;
 
 import android.app.AlertDialog;
 import android.content.ContentResolver;
@@ -42,7 +42,7 @@ import java.util.ArrayList;
  * game's thread; each picker call blocks that thread until the player has
  * chosen, never the UI thread.
  */
-public class YakumoActivity extends SDLActivity {
+public class GameActivity extends SDLActivity {
     private static final int kPickTree = 0x59414b01;
     private static final int kMaxDirectoryEntries = 100000;
     private static final Object sPickLock = new Object();

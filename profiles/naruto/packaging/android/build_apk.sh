@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Packs an APK of Yakumo for arm64-v8a without Gradle, from a build
+# Packs an APK of Ninja Impact for arm64-v8a without Gradle, from a build
 # configured with the NDK toolchain and -DMHP3RD_ANDROID_APP=ON. It carries
 # no game data: the player's disc image is installed on the device.
 # scripts/release_android.sh uses it for releases; on its own it makes test

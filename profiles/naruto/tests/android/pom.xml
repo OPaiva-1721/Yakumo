@@ -3,7 +3,7 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>io.github.teamgdb.yakumo</groupId>
+  <groupId>io.github.opaiva1721.ninjaimpact</groupId>
   <artifactId>android-public-tests</artifactId>
   <version>1.0-SNAPSHOT</version>
   <properties>
@@ -78,7 +78,7 @@
       </plugin>
       <plugin>
         <groupId>org.jacoco</groupId><artifactId>jacoco-maven-plugin</artifactId><version>0.8.15</version>
-        <configuration><includes><include>io/github/teamgdb/yakumo/**</include></includes></configuration>
+        <configuration><includes><include>io/github/opaiva1721/ninjaimpact/**</include></includes></configuration>
         <executions>
           <!-- Instrument original bytecode before Robolectric transforms it. -->
           <execution><id>instrument</id><goals><goal>instrument</goal></goals></execution>

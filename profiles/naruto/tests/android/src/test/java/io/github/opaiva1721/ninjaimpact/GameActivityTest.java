@@ -1,4 +1,4 @@
-package io.github.teamgdb.yakumo;
+package io.github.opaiva1721.ninjaimpact;
 
 import android.content.Intent;
 import android.content.ContentProvider;
@@ -50,7 +50,7 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = {29, 35}, manifest = Config.NONE)
 @ConscryptMode(ConscryptMode.Mode.OFF)
-public class YakumoActivityTest {
+public class GameActivityTest {
     @Before
     public void resetActivity() {
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", null);
@@ -63,19 +63,19 @@ public class YakumoActivityTest {
 
     @Test
     public void missingActivityReturnsSafeJniDefaults() {
-        assertArrayEquals(new int[4], YakumoActivity.cutoutInsets());
-        assertNull(YakumoActivity.pickFolder());
-        assertNull(YakumoActivity.pickDocument());
-        assertNull(YakumoActivity.documentName("content://test/document/opaque-id"));
-        assertNull(YakumoActivity.create("content://test/tree/root/document/root", "file", false));
-        assertEquals(-1, YakumoActivity.openDocument("content://test/document/file", "r"));
-        YakumoActivity.hapticTick();
-        YakumoActivity.relaunch();
+        assertArrayEquals(new int[4], GameActivity.cutoutInsets());
+        assertNull(GameActivity.pickFolder());
+        assertNull(GameActivity.pickDocument());
+        assertNull(GameActivity.documentName("content://test/document/opaque-id"));
+        assertNull(GameActivity.create("content://test/tree/root/document/root", "file", false));
+        assertEquals(-1, GameActivity.openDocument("content://test/document/file", "r"));
+        GameActivity.hapticTick();
+        GameActivity.relaunch();
     }
 
     @Test
     public void landscapeContractIgnoresResizableAndOrientationHints() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         for (boolean resizable : new boolean[]{false, true}) {
             activity.setOrientationBis(100, 200, resizable, "Portrait");
             assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, activity.getRequestedOrientation());
@@ -87,12 +87,12 @@ public class YakumoActivityTest {
     @Test
     public void treeRootPreservesAuthorityAndEscapedDocumentId() {
         assertEquals("content://documents.test/tree/primary%3AGames/document/primary%3AGames",
-            YakumoActivity.treeRoot("content://documents.test/tree/primary%3AGames"));
+            GameActivity.treeRoot("content://documents.test/tree/primary%3AGames"));
     }
 
     @Test
     public void directoryListingPreservesTypesUrisAndClosesItsCursor() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
         ListingProvider provider = new ListingProvider();
         provider.attachInfo(RuntimeEnvironment.getApplication(), null);
@@ -101,48 +101,48 @@ public class YakumoActivityTest {
         assertArrayEquals(new String[]{
             "d/Saves/content://documents.test/tree/root/document/saves",
             "f/Options.ini/content://documents.test/tree/root/document/options"
-        }, YakumoActivity.listFolder(folder));
+        }, GameActivity.listFolder(folder));
         assertTrue(provider.cursor.isClosed());
         provider.empty = true;
-        assertArrayEquals(new String[0], YakumoActivity.listFolder(folder));
+        assertArrayEquals(new String[0], GameActivity.listFolder(folder));
         assertTrue(provider.cursor.isClosed());
         provider.fail = true;
-        assertNull(YakumoActivity.listFolder(folder));
-        assertNull(YakumoActivity.create(folder, "New folder", true));
-        assertNull(YakumoActivity.create(folder, "Options.ini", false));
-        assertEquals(-1, YakumoActivity.openDocument(folder, "w"));
+        assertNull(GameActivity.listFolder(folder));
+        assertNull(GameActivity.create(folder, "New folder", true));
+        assertNull(GameActivity.create(folder, "Options.ini", false));
+        assertEquals(-1, GameActivity.openDocument(folder, "w"));
     }
 
     @Test
     public void documentNameUsesProviderMetadataAndClosesCursor() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
         ListingProvider provider = new ListingProvider();
         provider.attachInfo(RuntimeEnvironment.getApplication(), null);
         ShadowContentResolver.registerProviderInternal("documents.test", provider);
         String uri = "content://documents.test/tree/opaque-id/document/opaque-id";
-        assertEquals("日本語 mod", YakumoActivity.documentName(uri));
+        assertEquals("日本語 mod", GameActivity.documentName(uri));
         assertTrue(provider.cursor.isClosed());
         provider.empty = true;
-        assertNull(YakumoActivity.documentName(uri));
+        assertNull(GameActivity.documentName(uri));
         assertTrue(provider.cursor.isClosed());
         provider.fail = true;
-        assertNull(YakumoActivity.documentName(uri));
+        assertNull(GameActivity.documentName(uri));
     }
 
     @Test
     public void directoryListingBoundsProviderEntriesAndClosesCursor() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
         ListingProvider provider = new ListingProvider();
         provider.attachInfo(RuntimeEnvironment.getApplication(), null);
         ShadowContentResolver.registerProviderInternal("documents.test", provider);
         String folder = "content://documents.test/tree/root/document/root";
         provider.large = 100000;
-        assertEquals(100000, YakumoActivity.listFolder(folder).length);
+        assertEquals(100000, GameActivity.listFolder(folder).length);
         assertTrue(provider.cursor.isClosed());
         provider.large = 100001;
-        assertNull(YakumoActivity.listFolder(folder));
+        assertNull(GameActivity.listFolder(folder));
         assertTrue(provider.cursor.isClosed());
     }
 
@@ -184,7 +184,7 @@ public class YakumoActivityTest {
 
     @Test
     public void messageBoxKeepsButtonsAvailableAndUsesKeyboardDefaults() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         Bundle args = new Bundle();
         args.putString("title", "Public test");
         args.putString("message", new String(new char[2000]).replace('\0', 'x'));
@@ -208,7 +208,7 @@ public class YakumoActivityTest {
     }
 
     /** SDL's documented library-load failure keeps Android lifecycle tests public. */
-    public static class MissingNativeLibraryActivity extends YakumoActivity {
+    public static class MissingNativeLibraryActivity extends GameActivity {
         @Override public void loadLibraries() {
             throw new UnsatisfiedLinkError("Synthetic unavailable SDL native library");
         }
@@ -242,15 +242,15 @@ public class YakumoActivityTest {
     @Test
     @Config(shadows = InsetsViewShadow.class)
     public void cutoutUsesPhysicalInsetsAndIgnoresSystemBars() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
         try {
             InsetsViewShadow.rootInsets = null;
-            assertArrayEquals(new int[4], YakumoActivity.cutoutInsets());
+            assertArrayEquals(new int[4], GameActivity.cutoutInsets());
             InsetsViewShadow.rootInsets = new WindowInsets.Builder().build();
             activity.getWindowManager().addView(activity.getWindow().getDecorView(), new WindowManager.LayoutParams());
             Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertArrayEquals(new int[4], YakumoActivity.cutoutInsets());
+            assertArrayEquals(new int[4], GameActivity.cutoutInsets());
             DisplayCutout cutout = new DisplayCutout(new Rect(11, 12, 13, 14),
                 java.util.Collections.singletonList(new Rect(0, 0, 11, 100)));
             WindowInsets.Builder builder = new WindowInsets.Builder().setDisplayCutout(cutout);
@@ -260,7 +260,7 @@ public class YakumoActivityTest {
             }
             InsetsViewShadow.rootInsets = builder.build();
             assertSame(InsetsViewShadow.rootInsets, activity.getWindow().getDecorView().getRootWindowInsets());
-            assertArrayEquals(new int[]{11, 12, 13, 14}, YakumoActivity.cutoutInsets());
+            assertArrayEquals(new int[]{11, 12, 13, 14}, GameActivity.cutoutInsets());
         } finally {
             activity.getWindowManager().removeViewImmediate(activity.getWindow().getDecorView());
             InsetsViewShadow.rootInsets = null;
@@ -269,7 +269,7 @@ public class YakumoActivityTest {
 
     @Test
     public void messageBoxStacksNarrowButtonsAndHandlesEnterOnlyOnRelease() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         Bundle args = new Bundle();
         args.putString("title", "Public layout contract");
         args.putString("message", "A bounded message");
@@ -302,12 +302,12 @@ public class YakumoActivityTest {
 
     @Test
     public void hapticTickPostsVirtualKeyFeedback() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
         View view = activity.getWindow().getDecorView();
         activity.getWindowManager().addView(view, new WindowManager.LayoutParams());
         try {
-            YakumoActivity.hapticTick();
+            GameActivity.hapticTick();
             Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals(HapticFeedbackConstants.VIRTUAL_KEY, Shadows.shadowOf(view).lastHapticFeedbackPerformed());
         } finally {
@@ -317,9 +317,9 @@ public class YakumoActivityTest {
 
     @Test
     public void relaunchWithoutLauncherDoesNotStartAnotherActivity() {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
-        YakumoActivity.relaunch();
+        GameActivity.relaunch();
         assertNull(Shadows.shadowOf(activity).getNextStartedActivity());
     }
 
@@ -337,22 +337,22 @@ public class YakumoActivityTest {
 
     @Test
     public void folderPickerReturnsSelectedTreeAndCancellation() throws Exception {
-        exercisePicker(true, YakumoActivity.RESULT_OK,
+        exercisePicker(true, GameActivity.RESULT_OK,
             "content://documents.test/tree/root");
-        exercisePicker(true, YakumoActivity.RESULT_CANCELED, null);
+        exercisePicker(true, GameActivity.RESULT_CANCELED, null);
     }
 
     @Test
     public void documentPickerReturnsSelectedFileAndHandlesMissingResult() throws Exception {
-        exercisePicker(false, YakumoActivity.RESULT_OK,
+        exercisePicker(false, GameActivity.RESULT_OK,
             "content://documents.test/document/file");
-        exercisePicker(false, YakumoActivity.RESULT_OK, null);
+        exercisePicker(false, GameActivity.RESULT_OK, null);
     }
 
     private void exercisePicker(boolean folder, int status, String selected) throws Exception {
-        YakumoActivity activity = Robolectric.buildActivity(YakumoActivity.class).get();
+        GameActivity activity = Robolectric.buildActivity(GameActivity.class).get();
         ReflectionHelpers.setStaticField(SDLActivity.class, "mSingleton", activity);
-        FutureTask<String> result = new FutureTask<>(folder ? YakumoActivity::pickFolder : YakumoActivity::pickDocument);
+        FutureTask<String> result = new FutureTask<>(folder ? GameActivity::pickFolder : GameActivity::pickDocument);
         Thread worker = new Thread(result, "document-picker-test");
         worker.start();
         try {
