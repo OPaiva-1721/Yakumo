@@ -410,12 +410,18 @@ std::uint32_t do_files(psprecomp::GuestMemory &memory, std::uint32_t params, con
 
     static const std::vector<std::string> kSystemFiles = {"PARAM.SFO", "ICON0.PNG", "ICON1.PMF", "PIC1.PNG", "SND0.AT3"};
     std::vector<std::pair<std::string, std::uint64_t>> normal, system;
+    const auto add = [&](const std::string &name, std::uint64_t size) {
+        const bool is_system = std::find(kSystemFiles.begin(), kSystemFiles.end(), name) != kSystemFiles.end();
+        (is_system ? system : normal).emplace_back(name, size);
+    };
     for (const auto &file : std::filesystem::directory_iterator(folder, ec)) {
         if (!file.is_regular_file(ec)) continue;
         const std::string name = path_to_utf8(file.path().filename());
-        const bool is_system = std::find(kSystemFiles.begin(), kSystemFiles.end(), name) != kSystemFiles.end();
-        (is_system ? system : normal).emplace_back(name, file.file_size(ec));
+        if (name == kDiscLinkFile) continue;
+        add(name, file.file_size(ec));
     }
+    // Install data left on the disc counts as there.
+    for (const auto &[name, size] : linked_disc_files(folder)) add(name, size);
     std::sort(normal.begin(), normal.end());
     std::sort(system.begin(), system.end());
 

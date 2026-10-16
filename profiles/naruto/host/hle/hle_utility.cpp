@@ -5,6 +5,8 @@
 #include "hle_common.hpp"
 #include "utility_dialog.hpp"
 
+#include "platform/utf8_path.hpp"
+#include "save_data/param_sfo.hpp"
 #include "settings/settings.hpp"
 
 #if defined(MHP3RD_HAS_RENDERER)
@@ -14,6 +16,7 @@
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
+#include <fstream>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -379,9 +382,77 @@ void register_msg_dialog(HleRegistrar &hle) {
 
 } // namespace
 
+// SceUtilityGamedataInstallParam, after the common dialog header.
+namespace install {
+constexpr std::uint32_t kGameName = 0x34u;  // char[13]
+constexpr std::uint32_t kDataName = 0x44u;  // char[20]
+constexpr std::uint32_t kGameTitle = 0x58u; // char[128]
+constexpr std::uint32_t kDataTitle = 0xD8u; // char[128]
+constexpr std::uint32_t kDetail = 0x158u;   // char[1024]
+constexpr std::uint32_t kProgress = 0x560u; // percent
+constexpr std::uint32_t kMinimumSize = 0x564u;
+} // namespace install
+
+DialogLifecycle &install_dialog() {
+    static DialogLifecycle dialog;
+    return dialog;
+}
+
+// The game offers to install part of its disc on the Memory Stick
+// (PSP_GAME/INSDIR to PSP/SAVEDATA/<game><data>), and creates its options
+// data after that. The data stays on the disc (link_disc_folder): the folder
+// gets the icons, PARAM.SFO and the link, and reads of the rest go to the
+// disc. Done at once; the dialog reports 100% and finishes after a few polls.
+void register_gamedata_install(HleRegistrar &hle, const std::filesystem::path &memory_stick) {
+    hle.add("sceUtility", "sceUtilityGamedataInstallInitStart", [memory_stick](Runtime &rt, AllegrexContext &ctx) {
+        auto &memory = rt.memory();
+        const std::uint32_t params = arg(ctx, 0);
+        const std::uint32_t size = memory.load32(params + dialog_common::kSizeOffset);
+        const std::string game = read_cstring(memory, params + install::kGameName, 13u);
+        const std::string data = read_cstring(memory, params + install::kDataName, 20u);
+        const std::filesystem::path folder = memory_stick / "PSP" / "SAVEDATA" / path_from_utf8(game + data);
+        bool done = !game.empty() && link_disc_folder(folder, "PSP_GAME/INSDIR");
+        if (done) {
+            savedata::ParamSfo sfo;
+            sfo.set_string("CATEGORY", "MS", 4u);
+            sfo.set_integer("PARENTAL_LEVEL", 0u);
+            sfo.set_string("SAVEDATA_DIRECTORY", game + data, 64u);
+            sfo.set_string("TITLE", read_cstring(memory, params + install::kGameTitle, 128u), 128u);
+            sfo.set_string("SAVEDATA_TITLE", read_cstring(memory, params + install::kDataTitle, 128u), 128u);
+            sfo.set_string("SAVEDATA_DETAIL", read_cstring(memory, params + install::kDetail, 1024u), 1024u);
+            const std::vector<std::uint8_t> bytes = sfo.serialize();
+            std::ofstream out(folder / "PARAM.SFO", std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            done = static_cast<bool>(out);
+        }
+        std::cerr << "[gamedata] install " << game << data << " from PSP_GAME/INSDIR: "
+                  << (done ? "linked to the disc" : "failed") << "\n";
+        if (size >= install::kMinimumSize) memory.store32(params + install::kProgress, done ? 100u : 0u);
+        // Any non-zero result fails the install as a cancelled one would.
+        memory.store32(params + dialog_common::kResultOffset, done ? 0u : 0x80110D01u);
+        install_dialog().start();
+        kernel().finish(ctx, 0u);
+    });
+    hle.add("sceUtility", "sceUtilityGamedataInstallUpdate", [](Runtime &, AllegrexContext &ctx) {
+        (void)install_dialog().poll();
+        kernel().finish(ctx, 0u);
+    });
+    hle.add("sceUtility", "sceUtilityGamedataInstallGetStatus",
+        [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, install_dialog().poll()); });
+    hle.add("sceUtility", "sceUtilityGamedataInstallShutdownStart", [](Runtime &, AllegrexContext &ctx) {
+        if (!install_dialog().active()) {
+            kernel().finish(ctx, kErrorUtilityInvalidStatus);
+            return;
+        }
+        (void)install_dialog().shutdown();
+        kernel().finish(ctx, 0u);
+    });
+}
+
 void register_utility(HleRegistrar &hle, const std::filesystem::path &memory_stick) {
     register_osk(hle);
     register_msg_dialog(hle);
+    register_gamedata_install(hle, memory_stick);
     register_savedata(hle, memory_stick);
 }
 

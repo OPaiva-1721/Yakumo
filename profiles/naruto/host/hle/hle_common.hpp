@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace mhp3rd {
 
@@ -49,6 +50,17 @@ private:
     std::map<std::pair<std::string, std::string>, std::uint32_t> nids_by_name_;
     std::set<std::pair<std::string, std::uint32_t>> bound_;
 };
+
+// Install data the game copies from its disc (sceUtilityGamedataInstall)
+// stays on the disc: the Memory Stick folder holds kDiscLinkFile, which names
+// the disc folder that the files missing from it are read from. Installing
+// copies only the small files (the icons), not the hundreds of megabytes.
+inline constexpr const char *kDiscLinkFile = "DISC_LINK.TXT";
+// Links `folder` to the disc folder `disc_folder` ("PSP_GAME/INSDIR"),
+// copying its small files in. False when the disc has no such folder.
+bool link_disc_folder(const std::filesystem::path &folder, const std::string &disc_folder);
+// The linked disc folder's files that `folder` itself lacks: names and sizes.
+[[nodiscard]] std::vector<std::pair<std::string, std::uint64_t>> linked_disc_files(const std::filesystem::path &folder);
 
 // Reads from an open guest file descriptor without moving its position.
 // Returns the number of bytes read; 0 when the descriptor is unknown.

@@ -7,6 +7,7 @@
 #include "kernel/load_trace.hpp"
 #include "kernel/iso_image.hpp"
 #include "mods/mhp3rd_mods.hpp"
+#include "platform/utf8_path.hpp"
 #include "text/translation.hpp"
 
 #include "psprecomp/common.hpp"
@@ -145,6 +146,28 @@ std::filesystem::path host_path(const std::string &path) {
     return io().memory_stick / path;
 }
 
+// The disc folder a Memory Stick folder is linked to, if any (kDiscLinkFile).
+std::optional<std::string> disc_link(const std::filesystem::path &folder) {
+    std::ifstream in(folder / kDiscLinkFile);
+    std::string target;
+    if (!in || !std::getline(in, target)) return std::nullopt;
+    while (!target.empty() && (target.back() == '\r' || target.back() == ' ')) target.pop_back();
+    if (target.empty()) return std::nullopt;
+    return target;
+}
+
+// A file of a linked Memory Stick folder that is not there, found on the disc.
+std::optional<IsoImage::Entry> linked_entry(const std::string &path) {
+    if (!io().disc) return std::nullopt;
+    const auto slash = path.rfind('/');
+    if (slash == std::string::npos) return std::nullopt;
+    const std::optional<std::string> target = disc_link(host_path(path.substr(0, slash)));
+    if (!target) return std::nullopt;
+    std::optional<IsoImage::Entry> entry = io().disc->find(*target + "/" + path.substr(slash + 1u));
+    if (!entry || entry->directory) return std::nullopt;
+    return entry;
+}
+
 bool trace_io() {
     static const bool enabled = std::getenv("MHP3RD_TRACE_IO") != nullptr;
     return enabled;
@@ -189,6 +212,15 @@ std::int64_t open_file(const std::string &full_path, std::uint32_t flags) {
         const auto path = host_path(split.path);
         std::error_code ec;
         const bool exists = std::filesystem::exists(path, ec);
+        // Install data left on the disc, read from there.
+        if (const auto linked = !exists && (flags & kOpenWrite) == 0u ? linked_entry(split.path) : std::nullopt) {
+            file.kind = OpenFile::Kind::Disc;
+            file.disc_offset = static_cast<std::uint64_t>(linked->lba) * IsoImage::kSectorSize;
+            file.size = linked->size;
+            const std::uint32_t fd = io().next_fd++;
+            io().files.emplace(fd, std::move(file));
+            return fd;
+        }
         if (!exists && (flags & kOpenCreate) == 0u) return static_cast<std::int32_t>(io_error::kFileNotFound);
         std::ios::openmode mode = std::ios::binary | std::ios::in;
         if ((flags & kOpenWrite) != 0u) {
@@ -358,6 +390,43 @@ void finish_async(AllegrexContext &ctx, std::uint32_t fd, std::int64_t result) {
 }
 
 } // namespace
+
+bool link_disc_folder(const std::filesystem::path &folder, const std::string &disc_folder) {
+    if (!io().disc) return false;
+    const std::optional<IsoImage::Entry> source = io().disc->find(disc_folder);
+    if (!source || !source->directory) return false;
+    std::error_code ec;
+    std::filesystem::create_directories(folder, ec);
+    if (ec) return false;
+    // The icons and other small files are copied; the data stays on the disc.
+    constexpr std::uint64_t kCopiedAtMost = 1u << 20u;
+    for (const std::string &name : io().disc->list(disc_folder)) {
+        const std::optional<IsoImage::Entry> entry = io().disc->find(disc_folder + "/" + name);
+        if (!entry || entry->directory || entry->size > kCopiedAtMost) continue;
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(entry->size));
+        if (io().disc->read(static_cast<std::uint64_t>(entry->lba) * IsoImage::kSectorSize, bytes) != bytes.size())
+            return false;
+        std::ofstream out(folder / path_from_utf8(name), std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        if (!out) return false;
+    }
+    std::ofstream link(folder / kDiscLinkFile, std::ios::trunc);
+    link << disc_folder << "\n";
+    return static_cast<bool>(link);
+}
+
+std::vector<std::pair<std::string, std::uint64_t>> linked_disc_files(const std::filesystem::path &folder) {
+    std::vector<std::pair<std::string, std::uint64_t>> files;
+    const std::optional<std::string> target = disc_link(folder);
+    if (!target || !io().disc) return files;
+    std::error_code ec;
+    for (const std::string &name : io().disc->list(*target)) {
+        const std::optional<IsoImage::Entry> entry = io().disc->find(*target + "/" + name);
+        if (!entry || entry->directory || std::filesystem::exists(folder / path_from_utf8(name), ec)) continue;
+        files.emplace_back(name, entry->size);
+    }
+    return files;
+}
 
 std::size_t read_open_file(std::uint32_t fd, std::uint64_t offset, std::uint8_t *output, std::size_t size) {
     const auto found = io().files.find(fd);
@@ -536,6 +605,9 @@ void register_io(
                 const bool directory = std::filesystem::is_directory(host, ec);
                 write_stat(
                     rt.memory(), arg(ctx, 1), directory, directory ? 0u : std::filesystem::file_size(host, ec), 0u);
+                result = 0u;
+            } else if (const auto linked = linked_entry(split.path)) {
+                write_stat(rt.memory(), arg(ctx, 1), false, linked->size, linked->lba);
                 result = 0u;
             }
         }
