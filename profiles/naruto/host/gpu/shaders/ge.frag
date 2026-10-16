@@ -24,7 +24,8 @@ layout(constant_id = 0) const bool kAlphaTest = true;
 layout(push_constant) uniform Push {
     mat4 transform;
     vec4 viewport;
-    // x: texture enabled; y: texture function | 8 TCC | 16 colour doubling;
+    // x: texture enabled; y: texture function | 8 TCC | 16 colour doubling |
+    // 32 one-bit alpha (a 5551 screen sampled);
     // z: alpha reference + 256 * alpha function; w: environment colour 0xBBGGRR.
     vec4 texture_params;
     vec4 uv_transform;
@@ -61,6 +62,9 @@ void main() {
         // The PSP's texture functions. Without TCC the texture's alpha is
         // ignored: the vertex alpha passes through and decal draws the texel.
         int word = int(push.texture_params.y + 0.5);
+        // A picture of a 5551 screen: its alpha is one bit on the PSP, the
+        // top bit of the eight the render target keeps.
+        if ((word & 32) != 0) texel.a = texel.a >= 0.5 ? 1.0 : 0.0;
         int function = word & 7;
         bool texture_alpha = (word & 8) != 0;
         float alpha = texture_alpha ? color.a * texel.a : color.a;

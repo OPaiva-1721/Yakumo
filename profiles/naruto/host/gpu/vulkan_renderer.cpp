@@ -7723,6 +7723,11 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
             texture_descriptor = copy;
             // The RGB565 view explicitly supplies ONE for sampled alpha.
             texture_opaque = gpu_copy == nullptr && call.texture.format == TextureFormat::Rgba5650;
+            // A 5551 screen keeps one bit of alpha where the target holds
+            // eight: the shader cuts the sampled alpha to that bit (ge.frag).
+            if (gpu_copy == nullptr && !texture_opaque &&
+                (source.target->format == 1u || call.texture.format == TextureFormat::Rgba5551))
+                push.texture_params[1] += 32.0f;
             const float width = static_cast<float>(call.texture.width);
             const float height = static_cast<float>(call.texture.height);
             const std::array<float, 4> uv = push.uv_transform;
@@ -7788,6 +7793,11 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
         Impl::Target &drawn = impl.targets.at(call.target.color_address);
         const bool layout_changed =
             drawn.stride != call.target.color_stride || drawn.format != call.target.color_format;
+        static const bool trace_layout = std::getenv("MHP3RD_TRACE_FB_TEXTURES") != nullptr;
+        if (trace_layout && layout_changed)
+            std::cout << "[fbtex] frame " << impl.frames << " target 0x" << std::hex << call.target.color_address
+                      << std::dec << " stride=" << call.target.color_stride << " fmt=" << call.target.color_format
+                      << "\n";
         drawn.stride = call.target.color_stride;
         drawn.format = call.target.color_format;
         if (layout_changed || drawn.guest_words.empty() || drawn.last_drawn_frame != impl.frames)
