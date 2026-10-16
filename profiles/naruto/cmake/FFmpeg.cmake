@@ -68,6 +68,12 @@ if(NOT MHP3RD_FFMPEG STREQUAL _mhp3rd_ffmpeg_mode)
     set_property(CACHE MHP3RD_FFMPEG PROPERTY VALUE "${_mhp3rd_ffmpeg_mode}")
 endif()
 
+# A host without make (Windows building for Android) can build FFmpeg
+# elsewhere with the configuration above and name its install prefix here; it
+# must also hold COPYING.LGPLv2.1 from the source. The build step is skipped.
+set(MHP3RD_FFMPEG_PREBUILT "" CACHE PATH
+    "An FFmpeg install prefix built with the bundled configuration, used instead of building it")
+
 set(MHP3RD_FFMPEG_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/_deps/downloads" CACHE PATH
     "Where the bundled FFmpeg archive is downloaded to, or found without downloading")
 
@@ -189,7 +195,7 @@ elseif(WIN32)
 
 else()
     find_program(MHP3RD_MAKE NAMES gmake make)
-    if(NOT MHP3RD_MAKE)
+    if(NOT MHP3RD_MAKE AND NOT MHP3RD_FFMPEG_PREBUILT)
         message(FATAL_ERROR "mhp3rd: building the bundled FFmpeg needs make. Install it, or "
             "configure with -DMHP3RD_FFMPEG=system to use an installed FFmpeg.")
     endif()
@@ -239,7 +245,14 @@ else()
     if(EXISTS "${_mhp3rd_ffmpeg_stamp_file}")
         file(READ "${_mhp3rd_ffmpeg_stamp_file}" _mhp3rd_ffmpeg_built)
     endif()
-    if(NOT _mhp3rd_ffmpeg_built STREQUAL _mhp3rd_ffmpeg_stamp)
+    if(MHP3RD_FFMPEG_PREBUILT)
+        if(NOT EXISTS "${MHP3RD_FFMPEG_PREBUILT}/COPYING.LGPLv2.1")
+            message(FATAL_ERROR "mhp3rd: ${MHP3RD_FFMPEG_PREBUILT} lacks COPYING.LGPLv2.1")
+        endif()
+        set(_mhp3rd_ffmpeg_prefix "${MHP3RD_FFMPEG_PREBUILT}")
+        set(_mhp3rd_ffmpeg_src "${MHP3RD_FFMPEG_PREBUILT}")
+        message(STATUS "mhp3rd: using the FFmpeg built in ${MHP3RD_FFMPEG_PREBUILT}")
+    elseif(NOT _mhp3rd_ffmpeg_built STREQUAL _mhp3rd_ffmpeg_stamp)
         _mhp3rd_ffmpeg_fetch(_mhp3rd_ffmpeg_archive "ffmpeg-${MHP3RD_FFMPEG_VERSION}.tar.xz"
             "${MHP3RD_FFMPEG_URL}" "${MHP3RD_FFMPEG_SHA256}")
         message(STATUS "mhp3rd: building FFmpeg ${MHP3RD_FFMPEG_VERSION} "
