@@ -244,6 +244,7 @@ set(MHP3RD_HOST_SOURCES
     host/install/executable_preparation.cpp
     host/install/front_end.cpp
     host/install/installer.cpp
+    host/platform/launcher_api.cpp
     host/install/installer_dialogs.cpp
     host/install/user_data.cpp
     host/settings/settings.cpp
@@ -1074,6 +1075,14 @@ target_link_libraries(mhp3rd_test_host PUBLIC psprecomp_core Threads::Threads ${
 mhp3rd_use_ffmpeg(mhp3rd_test_host)
 if(WIN32)
     target_link_libraries(mhp3rd_test_host PUBLIC ws2_32 iphlpapi shell32)
+endif()
+
+# The launcher's C API over the installer, without game data.
+add_executable(mhp3rd_launcher_api_tests tests/launcher_api_tests.cpp)
+target_link_libraries(mhp3rd_launcher_api_tests PRIVATE mhp3rd_test_host)
+set_target_properties(mhp3rd_launcher_api_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(PSPRECOMP_BUILD_TESTS)
+    add_test(NAME mhp3rd_launcher_api_tests COMMAND mhp3rd_launcher_api_tests)
 endif()
 
 # Both performance overlays and their mode/log contracts, without a GPU or game data.
