@@ -110,6 +110,7 @@ enum Command : std::uint32_t {
     kTextureFilter = 0xC6,
     kTextureWrap = 0xC7,
     kTextureFunction = 0xC9,
+    kTextureEnvColor = 0xCA,
     kTextureFlush = 0xCB,
     // Fog: 0xCD and 0xCE are floats (65000 and 1.0 in the menus), 0xCF a colour.
     kFogEnd = 0xCD,
@@ -745,6 +746,10 @@ void GeState::handle_command(const GuestMemory &memory, std::uint32_t command, s
     case kTextureFunction:
         texture_.function = data & 7u;
         texture_.alpha_from_texture = ((data >> 8u) & 1u) != 0u;
+        texture_.color_double = ((data >> 16u) & 1u) != 0u;
+        break;
+    case kTextureEnvColor:
+        texture_.env_color = data & 0x00FFFFFFu;
         break;
     case kTexScaleU:
         texture_.scale_u = decode_float24(data);

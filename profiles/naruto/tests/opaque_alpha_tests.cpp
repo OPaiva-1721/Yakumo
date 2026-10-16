@@ -160,6 +160,12 @@ void test_interpolated_alpha() {
     for (std::uint32_t function : {5u, 8u, std::numeric_limits<std::uint32_t>::max()})
         expect(!opaque_alpha_is_exact(false, true, function), "unknown perspective texture functions remain guarded");
     expect(opaque_alpha_is_exact(true, false, 0u), "untextured through alpha can be exact");
+    // Without TCC every function keeps the vertex alpha, as decal does; with
+    // it, add multiplies the alphas, as modulate does.
+    for (std::uint32_t function : {0u, 1u, 2u, 3u, 4u})
+        expect(alpha_function_for_proof(function, false) == 1u, "without TCC the vertex alpha decides");
+    expect(alpha_function_for_proof(4u, true) == 0u && alpha_function_for_proof(3u, true) == 3u,
+        "with TCC add follows modulate and replace keeps the texture alpha");
 }
 
 std::array<double, 4> alpha_blend(const std::array<double, 4> &source, const std::array<double, 4> &destination) {

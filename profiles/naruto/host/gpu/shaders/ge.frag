@@ -9,7 +9,7 @@ layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform sampler2D guest_texture;
 
-// False for pipelines of draws without an alpha test (texture_params.w 0):
+// False for pipelines of draws without an alpha test (no function in texture_params.z):
 // the discard below is then compiled out, so tiled GPUs keep their early
 // depth test and hidden surface removal for them.
 #ifdef GE_NO_SPECIALIZATION
@@ -24,7 +24,9 @@ layout(constant_id = 0) const bool kAlphaTest = true;
 layout(push_constant) uniform Push {
     mat4 transform;
     vec4 viewport;
-    vec4 texture_params; // x: texture enabled, y: texture function, z: alpha ref, w: alpha func
+    // x: texture enabled; y: texture function | 8 TCC | 16 colour doubling;
+    // z: alpha reference + 256 * alpha function; w: environment colour 0xBBGGRR.
+    vec4 texture_params;
     vec4 uv_transform;
     vec4 view_z;
 } push;
@@ -56,21 +58,31 @@ void main() {
     if (push.texture_params.x > 0.5) {
         vec2 uv = push.texture_params.x > 1.5 ? sharp_bilinear(frag_texcoord) : frag_texcoord;
         vec4 texel = texture(guest_texture, clamp(uv, frag_uv_rect.xy, frag_uv_rect.zw));
-        int function = int(push.texture_params.y + 0.5);
+        // The PSP's texture functions. Without TCC the texture's alpha is
+        // ignored: the vertex alpha passes through and decal draws the texel.
+        int word = int(push.texture_params.y + 0.5);
+        int function = word & 7;
+        bool texture_alpha = (word & 8) != 0;
+        float alpha = texture_alpha ? color.a * texel.a : color.a;
         if (function == 0) {          // modulate
-            color *= texel;
+            color = vec4(color.rgb * texel.rgb, alpha);
         } else if (function == 1) {   // decal
-            color = vec4(mix(color.rgb, texel.rgb, texel.a), color.a);
-        } else if (function == 2) {   // blend
-            color = vec4(mix(color.rgb, texel.rgb, texel.rgb), color.a * texel.a);
+            color = vec4(texture_alpha ? mix(color.rgb, texel.rgb, texel.a) : texel.rgb, color.a);
+        } else if (function == 2) {   // blend: towards the environment colour
+            int env = int(push.texture_params.w + 0.5);
+            vec3 env_color = vec3(env & 255, (env >> 8) & 255, (env >> 16) & 255) / 255.0;
+            color = vec4(mix(color.rgb, env_color, texel.rgb), alpha);
+        } else if (function == 4) {   // add
+            color = vec4(color.rgb + texel.rgb, alpha);
         } else {                      // replace and everything else
-            color = texel;
+            color = vec4(texel.rgb, texture_alpha ? texel.a : color.a);
         }
+        if ((word & 16) != 0) color.rgb *= 2.0;
     }
 
     // A separate specular term is added after texturing, then fog blends
     // towards its colour; neither touches alpha.
-    color.rgb = min(color.rgb + frag_specular, vec3(1.0));
+    color.rgb = clamp(color.rgb + frag_specular, 0.0, 1.0);
     if ((int(push.viewport.w + 0.5) & 1) != 0) color.rgb = mix(lighting.fog_color.rgb, color.rgb, clamp(frag_fog, 0.0, 1.0));
 
     // PSP alpha test, evaluated per fragment.
@@ -78,8 +90,9 @@ void main() {
         out_color = color;
         return;
     }
-    int alpha_function = int(push.texture_params.w + 0.5);
-    float reference = push.texture_params.z / 255.0;
+    int alpha_word = int(push.texture_params.z + 0.5);
+    int alpha_function = alpha_word >> 8;
+    float reference = float(alpha_word & 255) / 255.0;
     float alpha = color.a;
     bool passed = true;
     if (alpha_function == 1) passed = false;                     // never

@@ -66,6 +66,8 @@ struct TextureState {
     std::uint32_t clut_max_bytes{};
     std::uint32_t function{};  // TFX: modulate/decal/blend/replace/add
     bool alpha_from_texture{}; // TCC
+    bool color_double{};       // TFX bit 16: the textured colour is doubled
+    std::uint32_t env_color{}; // 0xCA: the colour the blend function mixes towards
     std::uint32_t min_filter{};
     std::uint32_t mag_filter{};
     std::uint32_t wrap_s{};

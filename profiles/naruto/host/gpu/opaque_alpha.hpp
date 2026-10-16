@@ -44,6 +44,14 @@ inline bool opaque_fragment_alpha(
     }
 }
 
+// The function whose alpha rule above matches what ge.frag does: without TCC
+// the texture's alpha is ignored and every function keeps the vertex alpha, as
+// decal does; with it, add multiplies both alphas, as modulate does.
+inline std::uint32_t alpha_function_for_proof(std::uint32_t function, bool alpha_from_texture) {
+    if (!alpha_from_texture) return 1u;
+    return function == 4u ? 0u : function;
+}
+
 // Opaque inputs alone do not prove an exact fragment alpha: perspective
 // interpolation can round a constant vertex alpha below one. Keep its blend
 // and comparison path. Through draws avoid that division; replace/add take

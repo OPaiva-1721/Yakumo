@@ -128,7 +128,10 @@ constexpr std::uint32_t kGpuTimerSegments = 16u;
 struct PushConstants {
     std::array<float, 16> transform{};
     std::array<float, 4> viewport{};       // x,y: target size; z: through flag; w: 1 fog + 2 lighting
-    std::array<float, 4> texture_params{}; // x: enabled, y: function, z: alpha ref, w: alpha func
+    // x: enabled; y: texture function | 8 TCC (texture alpha) | 16 colour doubling;
+    // z: alpha reference + 256 * alpha function; w: texture environment colour,
+    // 0xBBGGRR (exact in a float).
+    std::array<float, 4> texture_params{};
     std::array<float, 4> uv_transform{1.0f, 1.0f, 0.0f, 0.0f};
     std::array<float, 4> view_z{}; // row of view * world that gives view-space z, for fog
 };
@@ -5611,7 +5614,7 @@ bool VulkanRenderer::Impl::self_test(std::string &detail) {
     push.viewport = {static_cast<float>(kSize), static_cast<float>(kSize), 1.0f, 0.0f};
     const auto draw = [&](VkPipeline pipeline, std::uint32_t first, float alpha_function, float reference) {
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        push.texture_params = {1.0f, 0.0f, reference, alpha_function};
+        push.texture_params = {1.0f, 8.0f, reference + 256.0f * alpha_function, 0.0f};
         vkCmdPushConstants(commands, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0u,
             sizeof(push), &push);
         vkCmdDraw(commands, 6u, 1u, first, 0u);
@@ -6884,7 +6887,8 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     // Replay and raw decoding keep their original pipelines until separately
     // covered. For CPU vertices, check alpha as they are already converted.
     const bool track_opaque = impl.opaque_draws && !raw && !impl.interpolating &&
-        opaque_alpha_is_exact(call.through, call.texture.enabled, call.texture.function);
+        opaque_alpha_is_exact(call.through, call.texture.enabled,
+            alpha_function_for_proof(call.texture.function, call.texture.alpha_from_texture));
     bool vertices_opaque = track_opaque;
     const auto to_gpu = [&](const Vertex &vertex) {
         GpuVertex out{};
@@ -7466,9 +7470,11 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     push.viewport = {static_cast<float>(kPspWidth), static_cast<float>(kPspHeight), call.through ? 1.0f : 0.0f,
         (fogged ? kPushFog : 0.0f) + (lit ? kPushLighting : 0.0f)};
     push.view_z = {view_world[2], view_world[6], view_world[10], view_world[14]};
-    push.texture_params = {call.texture.enabled ? 1.0f : 0.0f, static_cast<float>(call.texture.function),
-        static_cast<float>(call.alpha_test.enabled ? call.alpha_test.reference : 0u),
-        static_cast<float>(call.alpha_test.enabled ? call.alpha_test.function : 0u)};
+    const std::uint32_t texture_function = call.texture.function | (call.texture.alpha_from_texture ? 8u : 0u) |
+        (call.texture.color_double ? 16u : 0u);
+    push.texture_params = {call.texture.enabled ? 1.0f : 0.0f, static_cast<float>(texture_function),
+        static_cast<float>(call.alpha_test.enabled ? call.alpha_test.reference + 256u * call.alpha_test.function : 0u),
+        static_cast<float>(call.texture.env_color)};
     // Through-mode texture coordinates are in texels, transformed ones in [0,1].
     push.uv_transform = call.through && call.texture.width != 0u
         ? std::array<float, 4>{1.0f / static_cast<float>(call.texture.width),
@@ -7514,7 +7520,9 @@ void VulkanRenderer::submit(const DrawCall &call, const GuestMemory &memory) {
     const bool vertex_opaque = opaque_vertex_alpha(lit, vertices_opaque, call.has_vertex_color,
         call.lighting.material_update, call.lighting.ambient_alpha, call.material_color);
     if (track_opaque && !call.clear_mode && !perf::alternate_off(perf::NewPath::Opaque) &&
-        opaque_fragment_alpha(call.texture.enabled, call.texture.function, vertex_opaque, texture_opaque)) {
+        opaque_fragment_alpha(call.texture.enabled,
+            alpha_function_for_proof(call.texture.function, call.texture.alpha_from_texture), vertex_opaque,
+            texture_opaque)) {
         if (redundant_opaque_blend(key.blend, key.source_factor, key.destination_factor, key.equation))
             key.blend = false;
         if (!no_alpha_variants && !perf::alternate_off(perf::NewPath::Alpha) &&
