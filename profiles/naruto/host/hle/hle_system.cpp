@@ -170,6 +170,9 @@ void register_platform(HleRegistrar &hle) {
         kernel().finish(ctx, 0u);
     });
     hle.add("scePower", "scePowerSetClockFrequency630", success);
+    // The PLL runs at the CPU clock the game asked for: 333 MHz here.
+    hle.try_add("scePower", "scePowerGetPllClockFrequencyInt",
+        [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 333u); });
     hle.add("scePower", "scePowerCheckWlanCoexistenceClock", success);
 
     hle.add("sceRtc", "sceRtcGetCurrentClockLocalTime", [](Runtime &rt, AllegrexContext &ctx) {

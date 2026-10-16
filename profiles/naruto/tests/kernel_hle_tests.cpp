@@ -352,6 +352,29 @@ void event_flag_contracts() {
         check(f.thread(name, {uid, 1}) == mhp3rd::error::kUnknownEvfid, "deleted event flag rejects operations");
 }
 
+// Naruto's lightweight mutexes: a kernel mutex named by the work area.
+void lw_mutex_contracts() {
+    Fixture f;
+    const std::uint32_t work = Fixture::output + 0x100u;
+    check(f.thread("sceKernelCreateLwMutex", {work, Fixture::text, 0, 0, 0}) == 0, "lightweight mutex created");
+    auto &memory = f.runtime.memory();
+    check(memory.load32(work + 16u) != 0u && memory.load32(work) == 0u, "work area names the mutex, unlocked");
+    check(f.call("Kernel_Library", "sceKernelLockLwMutex", {work, 1, 0}) == 0 && memory.load32(work) == 1u &&
+            memory.load32(work + 4u) == static_cast<std::uint32_t>(f.kernel.current_uid()),
+        "lock records level and owner in the work area");
+    check(f.call("Kernel_Library", "sceKernelLockLwMutex", {work, 1, 0}) == mhp3rd::error::kMutexRecursiveNotAllowed,
+        "nonrecursive lightweight re-lock rejected");
+    check(f.call("Kernel_Library", "sceKernelUnlockLwMutex", {work, 1}) == 0 && memory.load32(work) == 0u &&
+            memory.load32(work + 4u) == 0xFFFFFFFFu,
+        "unlock clears level and owner");
+    check(f.call("Kernel_Library", "sceKernelUnlockLwMutex", {work, 1}) == mhp3rd::error::kMutexUnlocked,
+        "unlocking an unlocked lightweight mutex fails");
+    const std::uint32_t recursive = Fixture::output + 0x200u;
+    f.thread("sceKernelCreateLwMutex", {recursive, Fixture::text, 0x200, 1, 0});
+    check(f.call("Kernel_Library", "sceKernelLockLwMutex", {recursive, 2, 0}) == 0 && memory.load32(recursive) == 3u,
+        "recursive lightweight mutex adds count");
+}
+
 void mutex_contracts() {
     Fixture f;
     const auto uid = f.thread("sceKernelCreateMutex", {Fixture::text, 0, 0});
@@ -1809,6 +1832,7 @@ int main(int argc, char **argv) {
         semaphore_status_and_callback_wait_contracts();
         event_flag_contracts();
         mutex_contracts();
+        lw_mutex_contracts();
         interrupt_and_host_wait_contracts();
         vtimer_contracts();
         sysmem_contracts();

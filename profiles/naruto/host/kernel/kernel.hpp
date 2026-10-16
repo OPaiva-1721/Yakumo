@@ -58,6 +58,7 @@ inline constexpr std::uint32_t kIllegalMemblock = 0x800201B6u;
 inline constexpr std::uint32_t kIllegalCount = 0x800201BDu;
 inline constexpr std::uint32_t kUnknownVtid = 0x800201BEu;
 inline constexpr std::uint32_t kMutexNotFound = 0x800201C3u;
+inline constexpr std::uint32_t kLwMutexLocked = 0x800201CAu; // sceKernelTryLockLwMutex: held by another thread
 inline constexpr std::uint32_t kMutexLocked = 0x800201C4u;
 inline constexpr std::uint32_t kMutexUnlocked = 0x800201C5u;
 inline constexpr std::uint32_t kMutexLockOverflow = 0x800201C6u;

@@ -617,6 +617,10 @@ void register_display_ctrl(HleRegistrar &hle) {
         wait_vblank_start(rt, ctx);
     });
 
+    // The analog movement that counts as activity against the idle timer;
+    // nothing here dims or sleeps, so it is accepted.
+    hle.try_add("sceCtrl", "sceCtrlSetIdleCancelThreshold",
+        [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 0u); });
     hle.add("sceCtrl", "sceCtrlSetSamplingCycle", [](Runtime &, AllegrexContext &ctx) {
         const std::uint32_t previous = media().ctrl_cycle;
         media().ctrl_cycle = arg(ctx, 0);
@@ -955,6 +959,17 @@ void register_audio(HleRegistrar &hle) {
     hle.try_add("sceSasCore", "__sceSasGetEnvelopeHeight", [](Runtime &, AllegrexContext &ctx) {
         kernel().finish(ctx, static_cast<std::uint32_t>(audio::sas_core(arg(ctx, 0)).envelope_height(arg(ctx, 1))));
     });
+    // __sceSasGetAllEnvelopeHeights(core, heights): every voice's envelope, as
+    // __sceSasGetEnvelopeHeight gives one.
+    hle.try_add("sceSasCore", "__sceSasGetAllEnvelopeHeights", [](Runtime &rt, AllegrexContext &ctx) {
+        const audio::SasCore &core = audio::sas_core(arg(ctx, 0));
+        const std::uint32_t heights = arg(ctx, 1);
+        for (std::uint32_t voice = 0; voice < audio::kSasMaxVoices; ++voice)
+            rt.memory().store32(heights + voice * 4u, static_cast<std::uint32_t>(core.envelope_height(voice)));
+        kernel().finish(ctx, 0u);
+    });
+    hle.try_add("sceSasCore", "__sceSasGetPauseFlag",
+        [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, audio::sas_core(arg(ctx, 0)).pause_flag()); });
     // Reverb is not modelled, so the sends are accepted and dropped.
     for (const char *name : {"__sceSasRevType", "__sceSasRevParam", "__sceSasRevEVOL", "__sceSasRevVON"})
         hle.add("sceSasCore", name, [](Runtime &, AllegrexContext &ctx) { kernel().finish(ctx, 0u); });
@@ -1017,12 +1032,12 @@ gpu::VulkanRenderer *ensure_renderer() {
         // log; then close.
         std::cerr << "Renderer: unavailable (" << error << ")\n";
         const std::string device = renderer->device_summary();
-        const std::string text = "Yakumo cannot draw on this device's GPU:\n\n" + error + "\n\n" +
+        const std::string text = "Ninja Impact cannot draw on this device's GPU:\n\n" + error + "\n\n" +
             (device.empty() ? std::string("No GPU chosen yet") : device) + "\n" + android::system_summary() + "\n" +
             std::string(kYakumoVersion) +
             "\n\nPlease report it at github.com/TeamGDB/Yakumo/issues with a screenshot and "
             "the log.";
-        android::fatal_error("Yakumo: graphics error", text, 4);
+        android::fatal_error("Ninja Impact: graphics error", text, 4);
 #else
         std::cerr << "Renderer: unavailable (" << error << "); running headless\n";
         return nullptr;

@@ -342,6 +342,12 @@ void register_atrac_functions(HleRegistrar &hle) {
     });
 
     // sceAtracGetRemainFrame(id, outRemainFrame)
+    // Every track here is given whole (kRemainAllDataOnMemory), so none needs
+    // the second buffer that streamed tracks keep their loop's end in.
+    hle.try_add("sceAtrac3plus", "sceAtracIsSecondBufferNeeded", [](Runtime &, AllegrexContext &ctx) {
+        const std::uint32_t id = arg(ctx, 0);
+        finish_traced(ctx, "sceAtracIsSecondBufferNeeded", find_context(id) == nullptr ? context_error(id) : 0u);
+    });
     hle.add("sceAtrac3plus", "sceAtracGetRemainFrame", [](Runtime &rt, AllegrexContext &ctx) {
         const std::uint32_t id = arg(ctx, 0);
         if (find_context(id) == nullptr) {

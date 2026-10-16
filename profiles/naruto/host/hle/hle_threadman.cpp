@@ -358,7 +358,118 @@ void register_event_flags(HleRegistrar &hle) {
     });
 }
 
+// The lightweight mutexes of Kernel_Library keep their state in a work area
+// the game owns: lock count, owner, attributes, waiter count and the kernel
+// object's id (PPSSPP's NativeLwMutexWorkarea). Here that id names an ordinary
+// kernel mutex, which does the locking and waiting; the work area is kept up
+// to date for code that reads it.
+constexpr std::uint32_t kLwLockLevel = 0u;
+constexpr std::uint32_t kLwLockThread = 4u;
+constexpr std::uint32_t kLwAttributes = 8u;
+constexpr std::uint32_t kLwWaiters = 12u;
+constexpr std::uint32_t kLwUid = 16u;
+
+void sync_lw_workarea(psprecomp::GuestMemory &memory, std::uint32_t workarea, const Mutex &mutex) {
+    memory.store32(workarea + kLwLockLevel, as_unsigned(mutex.lock_count));
+    memory.store32(workarea + kLwLockThread, mutex.lock_count > 0 ? as_unsigned(mutex.owner) : 0xFFFFFFFFu);
+    memory.store32(workarea + kLwWaiters, static_cast<std::uint32_t>(mutex.waiters.size()));
+}
+
 void register_mutexes(HleRegistrar &hle) {
+    // sceKernelCreateLwMutex(workarea, name, attributes, initial count, options)
+    hle.try_add("ThreadManForUser", "sceKernelCreateLwMutex", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t workarea = arg(ctx, 0);
+        const SceUID uid = kernel().allocate_uid();
+        Mutex mutex{read_cstring(rt.memory(), arg(ctx, 1), 32u), arg(ctx, 2), 0, as_signed(arg(ctx, 3)), {}};
+        if (mutex.lock_count > 0) mutex.owner = kernel().current_uid();
+        rt.memory().store32(workarea + kLwAttributes, mutex.attributes);
+        rt.memory().store32(workarea + kLwUid, as_unsigned(uid));
+        sync_lw_workarea(rt.memory(), workarea, mutex);
+        kernel().mutexes[uid] = std::move(mutex);
+        kernel().finish(ctx, 0u);
+    });
+    hle.try_add("ThreadManForUser", "sceKernelDeleteLwMutex", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t workarea = arg(ctx, 0);
+        auto found = kernel().mutexes.find(as_signed(rt.memory().load32(workarea + kLwUid)));
+        if (found == kernel().mutexes.end()) {
+            kernel().finish(ctx, error::kMutexNotFound);
+            return;
+        }
+        kernel().cancel_waiters(found->second.waiters, error::kWaitDelete);
+        kernel().mutexes.erase(found);
+        rt.memory().store32(workarea + kLwUid, 0u);
+        kernel().finish(ctx, 0u);
+    });
+    // sceKernelLockLwMutex(workarea, count, timeout) and the try variant.
+    for (const bool try_only : {false, true}) {
+        hle.try_add("Kernel_Library", try_only ? "sceKernelTryLockLwMutex" : "sceKernelLockLwMutex",
+            [try_only](Runtime &rt, AllegrexContext &ctx) {
+                const std::uint32_t workarea = arg(ctx, 0);
+                const auto count = as_signed(arg(ctx, 1));
+                const SceUID uid = as_signed(rt.memory().load32(workarea + kLwUid));
+                auto found = kernel().mutexes.find(uid);
+                if (found == kernel().mutexes.end()) {
+                    kernel().finish(ctx, error::kMutexNotFound);
+                    return;
+                }
+                if (count <= 0) {
+                    kernel().finish(ctx, error::kIllegalCount);
+                    return;
+                }
+                Mutex &mutex = found->second;
+                if (mutex.lock_count == 0 ||
+                    (mutex.owner == kernel().current_uid() && (mutex.attributes & kMutexAttrRecursive) != 0u)) {
+                    mutex.owner = kernel().current_uid();
+                    mutex.lock_count += count;
+                    sync_lw_workarea(rt.memory(), workarea, mutex);
+                    kernel().finish(ctx, 0u);
+                    return;
+                }
+                if (mutex.owner == kernel().current_uid()) {
+                    kernel().finish(ctx, error::kMutexRecursiveNotAllowed);
+                    return;
+                }
+                if (try_only) {
+                    kernel().finish(ctx, error::kLwMutexLocked);
+                    return;
+                }
+                mutex.waiters.push_back(kernel().current_uid());
+                sync_lw_workarea(rt.memory(), workarea, mutex);
+                WaitState wait{};
+                wait.type = WaitType::Mutex;
+                wait.object = uid;
+                wait.value = static_cast<std::uint32_t>(count);
+                wait.timeout_address = try_only ? 0u : arg(ctx, 2);
+                kernel().block(ctx, wait, 0u);
+            });
+    }
+    hle.try_add("Kernel_Library", "sceKernelUnlockLwMutex", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t workarea = arg(ctx, 0);
+        const auto count = as_signed(arg(ctx, 1));
+        const SceUID uid = as_signed(rt.memory().load32(workarea + kLwUid));
+        auto found = kernel().mutexes.find(uid);
+        if (found == kernel().mutexes.end()) {
+            kernel().finish(ctx, error::kMutexNotFound);
+            return;
+        }
+        Mutex &mutex = found->second;
+        if (count <= 0)
+            kernel().finish(ctx, error::kIllegalCount);
+        else if (mutex.lock_count == 0 || mutex.owner != kernel().current_uid())
+            kernel().finish(ctx, error::kMutexUnlocked);
+        else if (count > mutex.lock_count)
+            kernel().finish(ctx, error::kMutexUnlockUnderflow);
+        else {
+            mutex.lock_count -= count;
+            if (mutex.lock_count == 0) {
+                mutex.owner = 0;
+                kernel().release_mutex_waiters(uid);
+            }
+            sync_lw_workarea(rt.memory(), workarea, mutex);
+            kernel().finish(ctx, 0u);
+        }
+    });
+
     hle.add("ThreadManForUser", "sceKernelCreateMutex", [](Runtime &rt, AllegrexContext &ctx) {
         const SceUID uid = kernel().allocate_uid();
         Mutex mutex{read_cstring(rt.memory(), arg(ctx, 0), 32u), arg(ctx, 1), 0, as_signed(arg(ctx, 2)), {}};
