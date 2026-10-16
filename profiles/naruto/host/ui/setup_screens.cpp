@@ -111,8 +111,8 @@ bool SetupScreens::introduce(const fs::path &data_dir) {
                 install::kDiscIdDisplay + ", as an .iso file: the PlayStation 3 release carries it.");
             ImGui::Dummy({0.0f, font() * 0.4f});
 #if defined(MHP3RD_ANDROID_APP)
-            paragraph("Next, in Android's file picker, select the image together with the EBOOT.ELF that PPSSPP "
-                      "dumps from it and your keys.txt (press and hold to select several). "
+            paragraph("Next, in Android's file picker, select the image (with the EBOOT.ELF that PPSSPP dumps from "
+                      "it and your keys.txt, unless this build carries them; press and hold to select several). "
                       "Yakumo copies the image into its own storage (an "
                       "app cannot keep reading a file elsewhere), checks that it is the right release and prepares "
                       "the game from it. The copy needs about 1.3 GB of free space, besides the 0.8 GB the app takes; "

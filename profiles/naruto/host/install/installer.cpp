@@ -235,12 +235,22 @@ void install_checked(const std::filesystem::path &image, ImageStorage storage, c
     const std::filesystem::path executable_partial = data_dir / (std::string(kExecutableFile) + ".part");
     // An executable the player supplied (dumped from the game) is kept when it
     // is the right one: this disc's EBOOT.BIN uses a key setup does not carry.
+    // A personal Android build may carry both in bundled/game instead.
     std::error_code supplied_ec;
-    const bool supplied = std::filesystem::is_regular_file(executable_path, supplied_ec) &&
-        psprecomp::sha256_file(executable_path) == kExecutableSha256;
-    if (supplied) {
-        std::filesystem::copy_file(
-            executable_path, executable_partial, std::filesystem::copy_options::overwrite_existing);
+    const std::filesystem::path bundled = data_dir / "bundled" / "game";
+    if (!std::filesystem::exists(data_dir / "keys.txt", supplied_ec) &&
+        std::filesystem::is_regular_file(bundled / "keys.txt", supplied_ec))
+        std::filesystem::copy_file(bundled / "keys.txt", data_dir / "keys.txt", supplied_ec);
+    std::filesystem::path supplied;
+    for (const std::filesystem::path &candidate : {executable_path, bundled / kExecutableFile}) {
+        if (std::filesystem::is_regular_file(candidate, supplied_ec) &&
+            psprecomp::sha256_file(candidate) == kExecutableSha256) {
+            supplied = candidate;
+            break;
+        }
+    }
+    if (!supplied.empty()) {
+        std::filesystem::copy_file(supplied, executable_partial, std::filesystem::copy_options::overwrite_existing);
     } else {
         std::vector<std::uint8_t> executable;
         try {

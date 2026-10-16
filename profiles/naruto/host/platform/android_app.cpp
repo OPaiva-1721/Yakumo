@@ -88,6 +88,34 @@ void unpack_bundled_fonts() {
     mhp3rd::set_bundled_resource_directory(root);
 }
 
+// A personal build can carry the player's own decrypted executable and keys
+// file as assets (build_apk.sh GAME_FILES_DIR), so that setup needs only the
+// disc image. They are unpacked once into bundled/game in the data folder,
+// apart from the installed files, and setup takes them from there.
+void unpack_bundled_game_files() {
+    const char *storage = SDL_GetAndroidInternalStoragePath();
+    if (storage == nullptr) return;
+    const std::filesystem::path root = std::filesystem::path(storage) / "bundled" / "game";
+    std::error_code ec;
+    std::filesystem::create_directories(root, ec);
+    for (const char *name : {"EBOOT.ELF", "keys.txt"}) {
+        const std::filesystem::path target = root / name;
+        if (std::filesystem::exists(target, ec)) continue;
+        const std::string asset = std::string("game/") + name;
+        std::size_t length = 0;
+        void *data = SDL_LoadFile(asset.c_str(), &length);
+        if (data == nullptr) continue;
+        const std::filesystem::path partial = target.string() + ".partial";
+        {
+            std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+            out.write(static_cast<const char *>(data), static_cast<std::streamsize>(length));
+        }
+        SDL_free(data);
+        std::filesystem::rename(partial, target, ec);
+        std::printf("Yakumo: unpacked bundled %s\n", name);
+    }
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -95,6 +123,7 @@ int main(int argc, char *argv[]) {
     // Back opens the in-game menu instead of leaving the app.
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
     unpack_bundled_fonts();
+    unpack_bundled_game_files();
     Launch launch{argc, argv, 1};
     pthread_attr_t attributes;
     pthread_attr_init(&attributes);

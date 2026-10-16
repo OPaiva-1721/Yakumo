@@ -101,6 +101,14 @@ cp "$sdl_dir/LICENSE.txt" "$work/assets/licenses/SDL3-LICENSE.txt"
 if [[ -f "$build_dir/bin/lib/libavcodec.so" ]]; then
     cp "$build_dir"/bin/lib/FFmpeg-COPYING.LGPLv2.1.txt "$build_dir"/bin/lib/FFmpeg-SOURCE.txt "$work/assets/licenses/"
 fi
+# GAME_FILES_DIR: a personal build only. It packs the player's own EBOOT.ELF
+# and keys.txt from that directory, so setup asks for the disc image alone.
+# Such an APK holds the player's game executable and console keys: never
+# share or publish it.
+if [[ -n "${GAME_FILES_DIR:-}" ]]; then
+    mkdir -p "$work/assets/game"
+    cp "$GAME_FILES_DIR/EBOOT.ELF" "$GAME_FILES_DIR/keys.txt" "$work/assets/game/"
+fi
 if [[ -n "${FONT_DIR:-}" ]]; then
     mkdir -p "$work/assets/fonts"
     cp "$FONT_DIR/NotoSansCJKjp-Regular.otf" "$work/assets/fonts/"
