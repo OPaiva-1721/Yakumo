@@ -2197,11 +2197,17 @@ void draw_over_game() {
     if (touch) {
         const settings::Settings &player = settings::current();
         const float opacity = player.touch_opacity * layer.renderer().touch_fade();
-        if (opacity > 0.01f) {
+        if (layer.renderer().gesture_touch_active()) {
+            // The ripple and the hint show even when the corners have faded.
+            draw_gesture_controls(
+                layer.renderer().touch_gestures(), opacity, SDL_GetTicks(), layer.renderer().gesture_hint());
+        } else if (opacity > 0.01f) {
             if (layer.renderer().action_touch_active())
                 draw_action_controls(layer.renderer().action_touch_controls(), opacity, SDL_GetTicks());
             else
                 draw_touch_controls(layer.renderer().touch_controls(), opacity);
+            if (layer.renderer().touch_pad_toggle_shown())
+                draw_pad_toggle(layer.renderer().touch_gestures(), opacity);
         }
     }
     if (hint_left > 0.0) draw_hint(hint_left);

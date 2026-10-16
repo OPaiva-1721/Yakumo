@@ -37,6 +37,7 @@ enum class Element : std::uint8_t {
     Select,
     Swipe, // the swipe area: left and right swipes press D-pad Left and Right
     R3,    // virtual right-stick button, using the player's gamepad assignment
+    Ultimate, // △, △, ○ one after the other: the ultimate jutsu
     Count
 };
 inline constexpr std::size_t kElements = static_cast<std::size_t>(Element::Count);
@@ -129,6 +130,10 @@ public:
     // How far, in heights of the safe area, a free finger is dragged before
     // it holds the D-pad that way (the camera in Naruto).
     static constexpr float kCameraDeadZone = 0.06f;
+    // The ultimate's presses: each button held this long, with this long
+    // between them, so the game reads every one at 30 frames a second.
+    static constexpr std::uint64_t kSequencePressMs = 80u;
+    static constexpr std::uint64_t kSequenceGapMs = 70u;
     static constexpr std::uint64_t kSwipePressMs = 130u;
 
     void set_layout(const ActionLayout &layout, const Area &area, float scale);
@@ -186,6 +191,8 @@ private:
     [[nodiscard]] bool in_swipe_area(Point at) const;
     Finger *find(std::uint64_t id);
     void swipe(int direction, std::uint64_t ms);
+    [[nodiscard]] std::uint16_t sequence_buttons(std::uint64_t ms) const;
+    [[nodiscard]] bool sequence_running(std::uint64_t ms) const;
 
     ActionLayout layout_{default_action_layout()};
     Area area_{};
@@ -197,6 +204,7 @@ private:
     std::optional<Point> stick_origin_;
     bool floating_stick_{true};
     bool camera_dpad_{true};
+    std::optional<std::uint64_t> sequence_start_; // the ultimate, running
     Point camera_drag_{};
     bool menu_tapped_{};
     int haptics_{};

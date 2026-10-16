@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <sstream>
 
 namespace mhp3rd::input::touch {
@@ -20,7 +21,7 @@ constexpr ElementInfo kInfo[kElements] = {
     {"dpad_down", "D-pad Down"},
     {"attack", "Combo (○)"},
     {"secondary", "Shuriken (□)"},
-    {"combo", "Special (R + attack)"},
+    {"combo", "R + × (guarded jump)"},
     {"evade", "Jump (×)"},
     {"use", "Chakra (△)"},
     {"guard", "Guard (R)"},
@@ -30,6 +31,7 @@ constexpr ElementInfo kInfo[kElements] = {
     {"select", "Select"},
     {"swipe", "Swipe area"},
     {"r3", "R3"},
+    {"ultimate", "Ultimate (△ △ ○)"},
 };
 
 ActionLayout make_default() {
@@ -59,28 +61,30 @@ ActionLayout make_default() {
     left(Element::Stick, 105.0f, 215.0f, 140.0f, 0u);
     set(Element::Start, Anchor::Left, 33.0f / kHeight, 60.0f / kHeight, 22.5f / kHeight, kStart);
     left(Element::Item, 30.0f, 130.0f, 52.0f, kL);
-    // The right thumb fights: ○ (combos) large where it rests, with what goes
-    // with it a slide away. △ (chakra) on its left, to charge and go on; ×
-    // (jump) below; □ (shuriken) above; R (guard and substitution) at its
-    // upper right, so guarding never stops the left thumb moving.
-    right(Element::Attack, 650.0f, 220.0f, 112.0f, kCircle);
-    right(Element::Use, 571.0f, 221.0f, 58.0f, kTriangle);
-    right(Element::Evade, 588.0f, 313.0f, 64.0f, kCross);
-    right(Element::Secondary, 694.0f, 149.0f, 52.0f, kSquare);
-    right(Element::Guard, 770.0f, 154.0f, 62.0f, kR);
+    // The right thumb fights: ○ (combos) large and leftmost, the rest to its
+    // right where the thumb rests. △ (chakra) above × (jump) by the edge; R
+    // (guard, substitution) at the upper right with R + × (the guarded jump)
+    // under it, so guarding never stops the left thumb moving; □ (shuriken)
+    // above ○, and the ultimate (△, △, ○) at its upper left.
+    right(Element::Attack, 574.0f, 224.0f, 112.0f, kCircle);
+    right(Element::Use, 706.0f, 206.0f, 58.0f, kTriangle);
+    right(Element::Evade, 713.0f, 288.0f, 64.0f, kCross);
+    right(Element::Guard, 774.0f, 164.0f, 62.0f, kR);
+    right(Element::Combo, 784.0f, 249.0f, 52.0f, static_cast<std::uint16_t>(kR | kCross));
+    right(Element::Secondary, 654.0f, 144.0f, 52.0f, kSquare);
+    right(Element::Ultimate, 576.0f, 141.0f, 48.0f, 0u);
     // The port's menu, small at the top middle: Android's Back gesture is
     // easy to set off, and hard to find, in a fight.
     set(Element::Pause, Anchor::Centre, 0.0f, 26.0f / kHeight, 22.5f / kHeight, 0u);
     // Kept in the editor, hidden.
     set(Element::DpadUp, Anchor::Left, 0.30f, 0.10f, 0.04f, kUp);
     set(Element::DpadDown, Anchor::Left, 0.42f, 0.10f, 0.04f, kDown);
-    set(Element::Combo, Anchor::Right, 0.42f, 0.10f, 0.055f, static_cast<std::uint16_t>(kR | kSquare));
     set(Element::Special, Anchor::Right, 0.30f, 0.10f, 0.05f, kR);
     set(Element::Select, Anchor::Right, 0.055f, 0.20f, 0.035f, kSelect);
     set(Element::Swipe, Anchor::Centre, 0.0f, 0.30f, 0.09f, 0u);
     set(Element::R3, Anchor::Right, 0.075f, 0.925f, 0.04f, 0u);
-    for (const Element e : {Element::DpadUp, Element::DpadDown, Element::Combo, Element::Special, Element::Select,
-             Element::Swipe, Element::R3})
+    for (const Element e : {Element::DpadUp, Element::DpadDown, Element::Special, Element::Select, Element::Swipe,
+             Element::R3})
         l.at(e).shown = false;
     return l;
 }
@@ -129,7 +133,7 @@ const ElementInfo &info(Element element) {
 }
 
 bool rebindable(Element element) {
-    return is_button(element) && element != Element::Pause && element != Element::R3;
+    return is_button(element) && element != Element::Pause && element != Element::R3 && element != Element::Ultimate;
 }
 
 const std::vector<ButtonChoice> &button_choices() {
@@ -319,6 +323,7 @@ void ActionControls::finger_down(std::uint64_t id, Point at, std::uint64_t ms) {
         slot->element = *button;
         slot->over = true;
         if (*button == Element::Pause) menu_tapped_ = true;
+        if (*button == Element::Ultimate && !sequence_running(ms)) sequence_start_ = ms;
         ++haptics_;
     } else if (layout_.at(Element::Stick).shown && !stick_finger_ &&
         std::hypot(at.x - stick.centre.x, at.y - stick.centre.y) <= stick.radius * 1.8f) {
@@ -414,9 +419,27 @@ void ActionControls::release_all() {
     stick_thumb_ = {};
     stick_origin_.reset();
     camera_drag_ = {};
+    sequence_start_.reset();
     menu_tapped_ = false;
     haptics_ = 0;
     swipe_until_[0] = swipe_until_[1] = 0u;
+}
+
+// The ultimate: △, △, ○, each pressed for kSequencePressMs with
+// kSequenceGapMs between them.
+constexpr std::uint16_t kUltimate[] = {kTriangle, kTriangle, kCircle};
+
+std::uint16_t ActionControls::sequence_buttons(std::uint64_t ms) const {
+    if (!sequence_start_ || ms < *sequence_start_) return 0u;
+    const std::uint64_t t = ms - *sequence_start_;
+    const std::uint64_t step = kSequencePressMs + kSequenceGapMs;
+    const std::uint64_t index = t / step;
+    if (index >= std::size(kUltimate) || t % step >= kSequencePressMs) return 0u;
+    return kUltimate[index];
+}
+
+bool ActionControls::sequence_running(std::uint64_t ms) const {
+    return sequence_start_ && ms < *sequence_start_ + std::size(kUltimate) * (kSequencePressMs + kSequenceGapMs);
 }
 
 std::uint16_t ActionControls::buttons(std::uint64_t ms) const {
@@ -425,6 +448,7 @@ std::uint16_t ActionControls::buttons(std::uint64_t ms) const {
         if (finger.used && finger.role == Role::Button && finger.over) buttons |= layout_.at(finger.element).buttons;
     if (ms < swipe_until_[0]) buttons |= kLeft;
     if (ms < swipe_until_[1]) buttons |= kRight;
+    buttons |= sequence_buttons(ms);
     if (camera_dpad_) {
         const float dead = kCameraDeadZone * std::max(area_.height, 1.0f);
         for (const Finger &finger : fingers_) {

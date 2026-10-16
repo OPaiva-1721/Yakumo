@@ -1076,8 +1076,15 @@ struct VulkanRenderer::Impl {
     // Touch screen: the on-screen controls, in window coordinates.
     input::touch::Controls touch;
     input::touch::ActionControls action_touch;
+    // The 2D scenes under the action layout: the screen itself is the pad,
+    // unless the player asked for the full PSP pad (gesture_pad) until the
+    // next 3D scene.
+    input::touch::Gestures gestures;
+    bool gesture_pad{};
+    std::optional<std::uint64_t> gestures_since_ms; // first used this run, for the hint
     input::touch::Insets touch_insets{};
-    settings::TouchLayout touch_mode{settings::TouchLayout::Psp};
+    // What takes the fingers: 0 the PSP layout, 1 the fight layout, 2 gestures.
+    int touch_mode{-1};
     bool touch_visible{};
     // The fight layout follows what the game shows: a frame of 3D (a fight,
     // the field) brings it up, a frame of 2D only (menus, dialogs, the world
@@ -1107,10 +1114,11 @@ struct VulkanRenderer::Impl {
         int height = 0;
         if (window == nullptr || !SDL_GetWindowSize(window, &width, &height) || width <= 0 || height <= 0) return;
         const settings::Settings &player = settings::current();
-        const settings::TouchLayout effective = action_layout() ? settings::TouchLayout::Action : settings::TouchLayout::Psp;
+        const int effective = action_layout() ? 1 : gestures_layout() ? 2 : 0;
         if (touch_mode != effective) {
             touch.release_all();
             action_touch.release_all();
+            gestures.release_all();
             touch_resolver.reset();
             lock_on_touch_tap = {};
             touch_mode = effective;
@@ -1153,10 +1161,22 @@ struct VulkanRenderer::Impl {
         // The action layout follows its editor as well; placing it is cheap.
         action_touch.set_layout(player.touch_action,
             input::touch::safe_area(static_cast<float>(width), static_cast<float>(height), touch_insets), size);
+        gestures.set_area(
+            input::touch::safe_area(static_cast<float>(width), static_cast<float>(height), touch_insets), size);
     }
     // The fight layout when the player chose it and the game shows 3D.
     [[nodiscard]] bool action_layout() const {
         return settings::current().touch_layout == settings::TouchLayout::Action && scene_3d;
+    }
+    // Gestures in the 2D scenes when the player chose the action layout,
+    // unless the full pad was asked for.
+    [[nodiscard]] bool gestures_layout() const {
+        return settings::current().touch_layout == settings::TouchLayout::Action && !scene_3d && !gesture_pad;
+    }
+    // The full PSP pad in a 2D scene, with the corner button that goes back
+    // to gestures.
+    [[nodiscard]] bool pad_toggle_shown() const {
+        return settings::current().touch_layout == settings::TouchLayout::Action && !scene_3d && gesture_pad;
     }
     // How visible the controls are: 1 while touched and for a while after,
     // then fading to 0.
@@ -1180,6 +1200,7 @@ struct VulkanRenderer::Impl {
                 touch_visible = false;
                 touch.release_all();
                 action_touch.release_all();
+                gestures.release_all();
                 lock_on_touch_tap = {};
             }
             return;
@@ -1187,6 +1208,7 @@ struct VulkanRenderer::Impl {
         if (!settings::current().touch_controls || !game_input) {
             touch.release_all();
             action_touch.release_all();
+            gestures.release_all();
             lock_on_touch_tap = {};
             return;
         }
@@ -1206,7 +1228,31 @@ struct VulkanRenderer::Impl {
         last_touch_ms = SDL_GetTicks();
         input::touch::Point drag;
         const bool r3_before = touch_r3_held();
-        if (action_layout()) {
+        // With the full pad in a 2D scene, its corner button goes back to gestures.
+        if (pad_toggle_shown() && event.type == SDL_EVENT_FINGER_DOWN) {
+            const input::touch::Placed toggle = gestures.corner(input::touch::Gestures::Corner::Pad);
+            if (std::hypot(at.x - toggle.centre.x, at.y - toggle.centre.y) <= toggle.radius) {
+                gesture_pad = false;
+                touch.release_all();
+                update_touch_layout();
+                return;
+            }
+        }
+        if (gestures_layout()) {
+            const std::uint64_t ms = SDL_NS_TO_MS(event.tfinger.timestamp);
+            if (!gestures_since_ms) gestures_since_ms = SDL_GetTicks();
+            if (event.type == SDL_EVENT_FINGER_DOWN)
+                gestures.finger_down(id, at, ms);
+            else if (event.type == SDL_EVENT_FINGER_MOTION)
+                gestures.finger_move(id, at, ms);
+            else
+                gestures.finger_up(id, ms);
+            if (gestures.take_show_pad()) {
+                gesture_pad = true;
+                gestures.release_all();
+                update_touch_layout();
+            }
+        } else if (action_layout()) {
             // Event time, so a swipe's speed is the finger's, not the frame's.
             const std::uint64_t ms = SDL_NS_TO_MS(event.tfinger.timestamp);
             if (event.type == SDL_EVENT_FINGER_DOWN)
@@ -1234,7 +1280,9 @@ struct VulkanRenderer::Impl {
         if (event.type == SDL_EVENT_FINGER_CANCELED ||
             (event.type == SDL_EVENT_FINGER_MOTION && r3_before && !touch_r3_held()))
             lock_on_touch_tap = {};
-        const int haptics = action_layout() ? action_touch.take_haptics() : touch.take_haptics();
+        const int haptics = action_layout() ? action_touch.take_haptics()
+            : gestures_layout()             ? gestures.take_haptics()
+                                            : touch.take_haptics();
         if (haptics > 0 && settings::current().touch_haptics) {
 #if defined(MHP3RD_ANDROID_APP)
             android::haptic_tick();
@@ -6128,10 +6176,14 @@ void VulkanRenderer::Impl::sample_pad(bool focused) {
     // So do the on-screen controls.
     if (impl_->touch_visible) {
         const bool action = impl_->action_layout();
-        pad.buttons |= action ? impl_->action_touch.buttons(SDL_GetTicks()) : impl_->touch.buttons();
-        const input::touch::Point stick = action ? impl_->action_touch.stick() : impl_->touch.stick();
-        analog_x += static_cast<int>(std::lround(stick.x * 127.0f));
-        analog_y += static_cast<int>(std::lround(stick.y * 127.0f));
+        if (impl_->gestures_layout()) {
+            pad.buttons |= impl_->gestures.buttons(SDL_GetTicks());
+        } else {
+            pad.buttons |= action ? impl_->action_touch.buttons(SDL_GetTicks()) : impl_->touch.buttons();
+            const input::touch::Point stick = action ? impl_->action_touch.stick() : impl_->touch.stick();
+            analog_x += static_cast<int>(std::lround(stick.x * 127.0f));
+            analog_y += static_cast<int>(std::lround(stick.y * 127.0f));
+        }
     }
 
     // With MHP3RD_PAD_AT_FLIP the game reads what the last pump sampled.
@@ -6192,7 +6244,29 @@ bool VulkanRenderer::take_touch_menu() noexcept {
     // Both, so a tap on either layout's button is never left for later.
     const bool psp = impl_->touch.take_menu();
     const bool action = impl_->action_touch.take_menu();
-    return psp || action;
+    const bool gestures = impl_->gestures.take_menu();
+    return psp || action || gestures;
+}
+
+bool VulkanRenderer::gesture_touch_active() const noexcept {
+    return impl_ && impl_->gestures_layout();
+}
+
+bool VulkanRenderer::touch_pad_toggle_shown() const noexcept {
+    return impl_ && impl_->pad_toggle_shown();
+}
+
+const input::touch::Gestures &VulkanRenderer::touch_gestures() const {
+    return impl_->gestures;
+}
+
+float VulkanRenderer::gesture_hint() const noexcept {
+    // The first five seconds the gestures are used in a run: what they do.
+    if (!impl_ || !impl_->gestures_layout()) return 0.0f;
+    if (!impl_->gestures_since_ms) return 1.0f;
+    const std::uint64_t shown = SDL_GetTicks() - *impl_->gestures_since_ms;
+    if (shown >= 5000u) return 0.0f;
+    return shown <= 4000u ? 1.0f : 1.0f - static_cast<float>(shown - 4000u) / 1000.0f;
 }
 
 bool VulkanRenderer::action_touch_active() const noexcept {
@@ -9132,6 +9206,8 @@ bool VulkanRenderer::present(
         if (impl.scene_streak >= Impl::kSceneFrames) {
             impl.scene_3d = now_3d;
             impl.scene_streak = 0u;
+            // The full pad asked for in one 2D scene lasts until the next 3D one.
+            if (now_3d) impl.gesture_pad = false;
         }
     }
     impl.frame_through_draws = 0u;

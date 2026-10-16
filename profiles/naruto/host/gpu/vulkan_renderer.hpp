@@ -14,6 +14,7 @@
 
 #include "input/touch_action.hpp"
 #include "input/touch_controls.hpp"
+#include "input/touch_gestures.hpp"
 #include "settings/settings.hpp"
 
 union SDL_Event;
@@ -127,6 +128,13 @@ public:
     // Whether the fight layout is the one in use now: the player chose it and
     // the game is showing 3D (otherwise the PSP layout, with its D-pad).
     [[nodiscard]] bool action_touch_active() const noexcept;
+    // Gestures in a 2D scene (the screen is the pad), with their corner buttons.
+    [[nodiscard]] bool gesture_touch_active() const noexcept;
+    [[nodiscard]] const input::touch::Gestures &touch_gestures() const;
+    // The full PSP pad in a 2D scene, with the corner button back to gestures.
+    [[nodiscard]] bool touch_pad_toggle_shown() const noexcept;
+    // How visible the hint saying what the gestures do is, 0-1.
+    [[nodiscard]] float gesture_hint() const noexcept;
     // How visible the on-screen controls are, 0-1: they fade out a while
     // after the last touch.
     [[nodiscard]] float touch_fade() const noexcept;

@@ -200,6 +200,7 @@ set(MHP3RD_HOST_SOURCES
     host/input/presets.cpp
     host/input/gamepad_mapping.cpp
     host/input/touch_action.cpp
+    host/input/touch_gestures.cpp
     host/input/touch_controls.cpp
     host/gpu/texture_pack.cpp
     host/gpu/texture_pack_import.cpp
@@ -683,6 +684,7 @@ endif()
 add_executable(mhp3rd_touch_tests
     tests/touch_controls_tests.cpp
     host/input/touch_action.cpp
+    host/input/touch_gestures.cpp
     host/input/touch_controls.cpp)
 target_include_directories(mhp3rd_touch_tests PRIVATE "${MHP3RD_PROFILE_DIR}/host")
 set_target_properties(mhp3rd_touch_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

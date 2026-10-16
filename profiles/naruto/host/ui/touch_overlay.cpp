@@ -132,6 +132,15 @@ bool draw_psp_glyph(ImDrawList *list, std::uint16_t buttons, ImVec2 c, float r, 
         return true;
     }
     default:
+        // L or R with one face button, pressed together: both, side by side.
+        for (const std::uint16_t shoulder : {std::uint16_t{0x0100u}, std::uint16_t{0x0200u}}) {
+            const std::uint16_t face = static_cast<std::uint16_t>(buttons & ~shoulder);
+            if ((buttons & shoulder) == 0u || (face != 0x1000u && face != 0x2000u && face != 0x4000u && face != 0x8000u))
+                continue;
+            draw_psp_glyph(list, shoulder, {c.x - r * 0.36f, c.y}, r * 0.62f, alpha, t);
+            draw_psp_glyph(list, face, {c.x + r * 0.36f, c.y}, r * 0.75f, alpha, t * 0.8f);
+            return true;
+        }
         return false;
     }
 }
@@ -207,6 +216,18 @@ void draw_icon(ImDrawList *list, Element element, ImVec2 c, float r, ImU32 ink, 
         list->AddRect({c.x - s * 0.7f, c.y - s * 0.62f}, {c.x + s * 0.25f, c.y + s * 0.3f}, ink, 0.0f, 0, t);
         list->AddRectFilled({c.x - s * 0.2f, c.y - s * 0.12f}, {c.x + s * 0.7f, c.y + s * 0.7f}, ink);
         break;
+    case Element::Ultimate: {
+        // △ △ ○, small, in a row, as faded as the ink.
+        const float a = static_cast<float>((ink >> IM_COL32_A_SHIFT) & 0xFFu) / 255.0f;
+        const float u = r * 0.2f;
+        for (const float dx : {-r * 0.48f, -r * 0.08f}) {
+            const ImVec2 p{c.x + dx, c.y};
+            list->AddTriangle({p.x, p.y - u}, {p.x + u * 0.95f, p.y + u * 0.7f}, {p.x - u * 0.95f, p.y + u * 0.7f},
+                colour(96, 214, 170, a), t);
+        }
+        list->AddCircle({c.x + r * 0.42f, c.y}, u * 0.9f, colour(240, 110, 120, a), 0, t);
+        break;
+    }
     case Element::R3:
         list->AddCircle(c, s * 0.65f, ink, 0, t);
         for (const ImVec2 d : {ImVec2{1, 0}, ImVec2{-1, 0}, ImVec2{0, 1}, ImVec2{0, -1}})
@@ -248,8 +269,9 @@ void draw_action_element(ImDrawList *list, Element element, const input::touch::
     // Blue-grey edges on a translucent dark fill; the main attack's edge is
     // orange, and its fill warmer.
     const bool main_attack = element == Element::Attack;
-    const ImU32 edge = main_attack ? colour(226, 103, 74, base * (look.held ? 1.0f : 0.9f))
-                                   : colour(143, 163, 196, base * (look.held ? 1.0f : 0.9f));
+    const ImU32 edge = main_attack                 ? colour(226, 103, 74, base * (look.held ? 1.0f : 0.9f))
+        : element == Element::Ultimate ? colour(240, 200, 90, base * (look.held ? 1.0f : 0.9f))
+                                       : colour(143, 163, 196, base * (look.held ? 1.0f : 0.9f));
     const ImU32 fill = main_attack ? colour(226, 103, 74, base * (look.held ? 0.5f : 0.22f))
                                    : colour(20, 26, 40, base * (look.held ? 0.6f : 0.35f));
     if (element == Element::Start) {
@@ -345,6 +367,66 @@ void draw_action_controls(const input::touch::ActionControls &controls, float op
         if (element == Element::Stick) placed.centre = controls.stick_centre();
         draw_action_element(list, element, placement, placed, controls.stick_thumb(), look);
     }
+}
+
+namespace {
+
+// The pad corner: a small pad, its four face buttons; crossed out over the
+// full pad, where it goes back to gestures.
+void draw_pad_corner(ImDrawList *list, const input::touch::Placed &p, float base, bool held, bool back) {
+    const ImVec2 c{p.centre.x, p.centre.y};
+    const float r = p.radius;
+    const float t = std::max(1.5f, r * 0.07f);
+    list->AddCircleFilled(c, r, colour(20, 26, 40, base * (held ? 0.6f : 0.35f)));
+    list->AddCircle(c, r + t, colour(0, 0, 0, base * 0.45f), 0, t);
+    list->AddCircle(c, r, colour(143, 163, 196, base * 0.9f), 0, t);
+    const float s = r * 0.3f;
+    for (const ImVec2 d : {ImVec2{0, -1}, ImVec2{1, 0}, ImVec2{0, 1}, ImVec2{-1, 0}})
+        list->AddCircleFilled({c.x + d.x * s, c.y + d.y * s}, r * 0.13f, colour(255, 255, 255, base * 0.85f));
+    if (back)
+        list->AddLine({c.x - r * 0.6f, c.y + r * 0.6f}, {c.x + r * 0.6f, c.y - r * 0.6f}, colour(255, 255, 255, base),
+            t * 1.2f);
+}
+
+} // namespace
+
+void draw_gesture_controls(const input::touch::Gestures &gestures, float opacity, std::uint64_t ms, float hint) {
+    using Corner = input::touch::Gestures::Corner;
+    ImDrawList *list = ImGui::GetBackgroundDrawList();
+    if (opacity > 0.01f) {
+        ElementLook look;
+        look.opacity = opacity;
+        look.held = gestures.held(Corner::Start);
+        draw_action_element(list, Element::Start, {input::touch::Anchor::Left, 0, 0, 0, 0x0008u, true},
+            gestures.corner(Corner::Start), {}, look);
+        look.held = gestures.held(Corner::Menu);
+        draw_action_element(list, Element::Pause, {}, gestures.corner(Corner::Menu), {}, look);
+        draw_pad_corner(list, gestures.corner(Corner::Pad), std::clamp(opacity, 0.1f, 1.0f),
+            gestures.held(Corner::Pad), false);
+    }
+    // A ripple where the screen was tapped: the tap was taken.
+    constexpr std::uint64_t kRippleMs = 350u;
+    if (const std::optional<input::touch::Point> tap = gestures.last_tap(ms, kRippleMs)) {
+        const float radius = ImGui::GetIO().DisplaySize.y * 0.05f;
+        list->AddCircle({tap->x, tap->y}, radius, colour(255, 255, 255, 0.55f), 0, 3.0f);
+    }
+    if (hint > 0.01f) {
+        const char *text = "Tap: confirm   Drag: move   Two fingers: back";
+        ImFont *font = ImGui::GetFont();
+        const float size = std::max(16.0f, ImGui::GetIO().DisplaySize.y * 0.045f);
+        const ImVec2 extent = font->CalcTextSizeA(size, 1e9f, 0.0f, text);
+        const ImVec2 at{(ImGui::GetIO().DisplaySize.x - extent.x) * 0.5f, ImGui::GetIO().DisplaySize.y * 0.72f};
+        const float pad = size * 0.4f;
+        list->AddRectFilled({at.x - pad, at.y - pad}, {at.x + extent.x + pad, at.y + extent.y + pad},
+            colour(0, 0, 0, 0.55f * hint), pad);
+        list->AddText(font, size, at, colour(255, 255, 255, hint), text);
+    }
+}
+
+void draw_pad_toggle(const input::touch::Gestures &gestures, float opacity) {
+    if (opacity <= 0.01f) return;
+    draw_pad_corner(ImGui::GetBackgroundDrawList(), gestures.corner(input::touch::Gestures::Corner::Pad),
+        std::clamp(opacity, 0.1f, 1.0f), false, true);
 }
 
 void draw_touch_controls(const input::touch::Controls &controls, float opacity) {

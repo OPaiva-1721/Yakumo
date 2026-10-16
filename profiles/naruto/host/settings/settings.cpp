@@ -581,7 +581,8 @@ const std::vector<Field> &all_fields() {
             list.push_back(Field{key.c_str(), nullptr,
                 [i](Settings &s, const std::string &t) {
                     if (!input::touch::parse(t, s.touch_action.elements[i])) return false;
-                    if (i == static_cast<std::size_t>(input::touch::Element::R3))
+                    if (i == static_cast<std::size_t>(input::touch::Element::R3) ||
+                        i == static_cast<std::size_t>(input::touch::Element::Ultimate))
                         s.touch_action.elements[i].buttons = 0u;
                     return true;
                 },
@@ -821,7 +822,7 @@ State &state() {
 
 // The fight layout's design: a saved layout of an earlier one is replaced.
 constexpr const char *kTouchActionVersionKey = "input.touch_action.version";
-constexpr std::uint32_t kTouchActionVersion = 3u;
+constexpr std::uint32_t kTouchActionVersion = 4u;
 
 void write_entries(const Settings &values, Entries &entries) {
     for (const Field &field : all_fields()) entries[field.key] = field.format(values);
@@ -857,9 +858,9 @@ void read_entries(Settings &values, const Entries &entries) {
         const input::touch::Placement previous{input::touch::Anchor::Right, 0.6f, 0.19f, 0.04f, 0u, true};
         if (r3 == previous) r3 = input::touch::default_psp_layout().at(input::touch::PspElement::R3);
     }
-    // A layout saved before the current design (version 3, the 844x390
-    // drawing reworked for the thumbs) gives way to it, once; one saved since
-    // stays as it is.
+    // A layout saved before the current design (version 4: ○ leftmost of the
+    // right thumb's buttons, R + × and the ultimate) gives way to it, once;
+    // one saved since stays as it is.
     std::uint32_t action_version = 1u;
     if (const auto found = entries.find(kTouchActionVersionKey); found != entries.end())
         (void)parse_uint(found->second, 1u, 1000u, action_version);

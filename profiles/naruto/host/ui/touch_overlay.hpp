@@ -2,6 +2,7 @@
 
 #include "input/touch_action.hpp"
 #include "input/touch_controls.hpp"
+#include "input/touch_gestures.hpp"
 #include "input/touch_psp.hpp"
 
 #include <cstdint>
@@ -17,6 +18,13 @@ void draw_touch_controls(const input::touch::Controls &controls, float opacity);
 
 // The action layout (#174) the same way, `ms` for the swipes' marks.
 void draw_action_controls(const input::touch::ActionControls &controls, float opacity, std::uint64_t ms);
+
+// The 2D scenes' gestures: their corner buttons, a ripple where the screen
+// was tapped, and while `hint` is above zero a line saying what they do.
+void draw_gesture_controls(const input::touch::Gestures &gestures, float opacity, std::uint64_t ms, float hint);
+// The corner button that, over the full PSP pad in a 2D scene, goes back to
+// gestures.
+void draw_pad_toggle(const input::touch::Gestures &gestures, float opacity);
 
 // One element of the action layout, for the game and for the editor: its
 // own icon, drawn in code, and the PSP buttons it presses beside it.

@@ -1,4 +1,5 @@
 // The on-screen touch controls' layout, fingers and stick, without a screen.
+#include "input/touch_gestures.hpp"
 #include "input/touch_action.hpp"
 #include "input/touch_controls.hpp"
 #include "input/touch_psp.hpp"
@@ -386,10 +387,15 @@ void test_action_layout() {
             return std::fabs(p.centre.x - x) < 1.0f && std::fabs(p.centre.y - y) < 1.0f &&
                 std::fabs(p.radius - radius) < 1.0f;
         };
-        check(near(Element::Attack, 706.0f, 276.0f, 56.0f) && near(Element::Use, 600.0f, 250.0f, 29.0f) &&
-                near(Element::Evade, 620.0f, 345.0f, 32.0f) && near(Element::Secondary, 720.0f, 175.0f, 26.0f) &&
-                near(Element::Guard, 801.0f, 185.0f, 31.0f),
+        check(near(Element::Attack, 630.0f, 280.0f, 56.0f) && near(Element::Use, 735.0f, 235.0f, 29.0f) &&
+                near(Element::Evade, 745.0f, 320.0f, 32.0f) && near(Element::Secondary, 680.0f, 170.0f, 26.0f) &&
+                near(Element::Guard, 805.0f, 195.0f, 31.0f) && near(Element::Combo, 810.0f, 275.0f, 26.0f) &&
+                near(Element::Ultimate, 600.0f, 165.0f, 24.0f),
             "the right thumb's buttons sit where the design puts them, R among them");
+        bool leftmost = true;
+        for (const Element e : {Element::Use, Element::Evade, Element::Secondary, Element::Guard, Element::Combo})
+            leftmost = leftmost && phone.placed(e).centre.x > phone.placed(Element::Attack).centre.x;
+        check(leftmost, "○ is left of the right thumb's other buttons");
         check(near(Element::Stick, 175.0f, 285.0f, 70.0f) && near(Element::Item, 56.0f, 156.0f, 26.0f) &&
                 near(Element::Start, 33.0f, 60.0f, 22.5f) && near(Element::Pause, 422.0f, 26.0f, 22.5f),
             "and the D-pad, L, Start and the menu too");
@@ -405,12 +411,12 @@ void test_action_layout() {
             ++shown;
             targets = targets && phone.placed(static_cast<Element>(i)).radius * 2.0f >= 44.0f;
         }
-        check(shown == 9u && targets, "the design's nine controls are shown, each at least 44 px across");
+        check(shown == 11u && targets, "the design's eleven controls are shown, each at least 44 px across");
     }
 
     Placement placement;
     check(!parse("middle 0 0 0.1 0x1000 1", placement) && !parse("left 0 0", placement), "bad placements are refused");
-    check(default_action_layout().at(Element::Combo).buttons == 0x8200u, "the special is R and □ together");
+    check(default_action_layout().at(Element::Combo).buttons == 0x4200u, "the guarded jump is R and × together");
 
     const Area area = safe_area(2000.0f, 1000.0f, {});
     const Placement moved =
@@ -488,7 +494,7 @@ void test_action_fingers() {
     check(controls.buttons(ms) == 0x4000u, "a thumb slides from the attack to evade");
     controls.finger_up(1, ms + 20u);
     controls.finger_down(2, centre(Element::Combo), ms);
-    check(controls.buttons(ms) == 0x8200u, "the special presses R and □ in the same frame");
+    check(controls.buttons(ms) == 0x4200u, "R + × presses both in the same frame");
 
     // The stick, a button and the camera at once.
     const Point stick = centre(Element::Stick);
@@ -497,7 +503,7 @@ void test_action_fingers() {
     controls.finger_down(4, {1000.0f, 900.0f}, ms);
     controls.finger_move(4, {1050.0f, 880.0f}, ms + 5u);
     check(controls.stick().x > 0.99f && std::fabs(controls.stick().y) < 1e-3f, "the stick is fixed where it is placed");
-    check(controls.buttons(ms) == 0x8200u, "while a button is held");
+    check(controls.buttons(ms) == 0x4200u, "while a button is held");
     const Point drag = controls.take_camera_drag();
     check(drag.x == 50.0f && drag.y == -20.0f, "and a free finger turns the camera");
     controls.finger_up(3, ms);
@@ -546,6 +552,79 @@ void test_action_fingers() {
 
 } // namespace
 
+// The ultimate presses △, △, ○ one after the other, from one tap.
+void test_ultimate() {
+    ActionControls controls;
+    const Area area = safe_area(2000.0f, 1000.0f, {});
+    controls.set_layout(default_action_layout(), area, 1.0f);
+    const std::uint64_t press = ActionControls::kSequencePressMs;
+    const std::uint64_t step = press + ActionControls::kSequenceGapMs;
+    const std::uint64_t ms = 1000u;
+    controls.finger_down(1, controls.placed(Element::Ultimate).centre, ms);
+    controls.finger_up(1, ms + 30u);
+    check(controls.buttons(ms) == 0x1000u && controls.buttons(ms + press - 1u) == 0x1000u, "the ultimate starts with △");
+    check(controls.buttons(ms + press) == 0u, "lets go between presses");
+    check(controls.buttons(ms + step) == 0x1000u, "presses △ again");
+    check(controls.buttons(ms + step * 2u + 10u) == 0x2000u, "then ○");
+    check(controls.buttons(ms + step * 3u) == 0u, "and is done");
+    controls.finger_down(2, controls.placed(Element::Ultimate).centre, ms + 40u);
+    check(controls.buttons(ms + step) == 0x1000u, "a second tap while it runs does not start it over");
+    check(!rebindable(Element::Ultimate), "and it is not rebound like a button");
+}
+
+// The 2D scenes: the screen itself is the pad.
+void test_gestures() {
+    Gestures g;
+    const Area area = safe_area(2000.0f, 1000.0f, {});
+    g.set_area(area, 1.0f);
+    const Point middle{area.left + area.width * 0.5f, area.top + area.height * 0.6f};
+    std::uint64_t ms = 1000u;
+
+    g.finger_down(1, middle, ms);
+    check(g.buttons(ms) == 0u, "a finger landing presses nothing yet");
+    g.finger_up(1, ms + 120u);
+    check(g.buttons(ms + 120u) == 0x4000u && g.take_haptics() == 1, "a tap presses ×, the confirm button");
+    check(g.buttons(ms + 120u + Gestures::kPressMs) == 0u, "for a moment");
+    check(g.last_tap(ms + 200u, 500u).has_value(), "and leaves a ripple where it landed");
+
+    ms = 3000u;
+    g.finger_down(2, middle, ms);
+    g.finger_up(2, ms + Gestures::kTapMs + 200u);
+    check(g.buttons(ms + Gestures::kTapMs + 200u) == 0u, "a long press is not a tap");
+
+    ms = 5000u;
+    const float dead = Gestures::kDragDeadZone * area.height;
+    g.finger_down(3, middle, ms);
+    g.finger_move(3, {middle.x + dead * 0.5f, middle.y}, ms + 20u);
+    check(g.buttons(ms + 20u) == 0u, "a small drag holds nothing");
+    g.finger_move(3, {middle.x + dead * 0.6f, middle.y + dead * 2.0f}, ms + 40u);
+    check(g.buttons(ms + 40u) == 0x0040u, "a drag down holds D-pad Down, one way only");
+    g.finger_move(3, {middle.x - dead * 3.0f, middle.y + dead * 1.0f}, ms + 60u);
+    check(g.buttons(ms + 60u) == 0x0080u, "and follows the finger to Left");
+    g.finger_up(3, ms + 80u);
+    check(g.buttons(ms + 80u) == 0u, "a drag that ends is no tap");
+
+    ms = 7000u;
+    g.finger_down(4, middle, ms);
+    g.finger_down(5, {middle.x + 200.0f, middle.y}, ms + 30u);
+    g.finger_up(4, ms + 120u);
+    check(g.buttons(ms + 120u) == 0u, "the first finger of two confirms nothing");
+    g.finger_up(5, ms + 150u);
+    check(g.buttons(ms + 150u) == 0x2000u, "two fingers tapped press ○, back");
+
+    ms = 9000u;
+    g.finger_down(6, g.corner(Gestures::Corner::Start).centre, ms);
+    check(g.buttons(ms) == 0x0008u && g.held(Gestures::Corner::Start), "the Start corner holds Start");
+    g.finger_up(6, ms + 50u);
+    check(g.buttons(ms + 50u) == 0u, "and lets go, tapping nothing");
+    g.finger_down(7, g.corner(Gestures::Corner::Menu).centre, ms);
+    g.finger_up(7, ms + 50u);
+    check(g.take_menu() && !g.take_menu() && g.buttons(ms + 50u) == 0u, "the menu corner opens the menu");
+    g.finger_down(8, g.corner(Gestures::Corner::Pad).centre, ms);
+    g.finger_up(8, ms + 50u);
+    check(g.take_show_pad() && g.buttons(ms + 50u) == 0u, "the pad corner asks for the full pad");
+}
+
 int main() {
     test_psp_relative_sizes();
     test_psp_haptics();
@@ -558,6 +637,8 @@ int main() {
     test_action_layout();
     test_action_fingers();
     test_floating_stick();
+    test_ultimate();
+    test_gestures();
     if (failures != 0) {
         std::cerr << failures << " failure(s)\n";
         return 1;
