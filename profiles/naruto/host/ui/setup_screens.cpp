@@ -103,23 +103,23 @@ bool SetupScreens::introduce(const fs::path &data_dir) {
                 answer = 2;
                 return false;
             }
-            begin_panel("##welcome", "Welcome to Yakumo", kSubtitle, false);
+            begin_panel("##welcome", "Welcome to Ninja Impact", kSubtitle, false);
             begin_content();
             ImGui::Dummy({0.0f, font() * 0.3f});
-            paragraph(std::string("Yakumo plays ") + install::kGameTitle +
+            paragraph(std::string("Ninja Impact plays ") + install::kGameTitle +
                 " from your own copy of the game. It needs the disc image of the game's PSP disc, " +
                 install::kDiscIdDisplay + ", as an .iso file: the PlayStation 3 release carries it.");
             ImGui::Dummy({0.0f, font() * 0.4f});
 #if defined(MHP3RD_ANDROID_APP)
             paragraph("Next, in Android's file picker, select the image together with your keys.txt (press and "
                       "hold to select several); an EBOOT.ELF that PPSSPP dumps from the game may go with them. "
-                      "Yakumo copies the image into its own storage (an "
+                      "Ninja Impact copies the image into its own storage (an "
                       "app cannot keep reading a file elsewhere), checks that it is the right release and prepares "
                       "the game from it. The copy needs about 1.3 GB of free space, besides the 0.8 GB the app takes; "
                       "once it is made, the original can be deleted. Nothing is downloaded.",
                 colors::kTextDim);
 #else
-            paragraph("Choose the image next. Yakumo checks that it is the right release, prepares the game from it "
+            paragraph("Choose the image next. Ninja Impact checks that it is the right release, prepares the game from it "
                       "and, unless you choose otherwise, copies it into its data folder so the game keeps working if "
                       "the original is moved or deleted. Nothing is downloaded.",
                 colors::kTextDim);
@@ -265,21 +265,21 @@ std::optional<install::ImageStorage> SetupScreens::choose_storage(
                     human_size(*space) + " is free in the data folder.";
             RowOptions copy_options{!room, {}, {}};
             if (first && room) focus_next_row();
-            if (button_row("Copy it into Yakumo's data folder", copy_options)) choice = install::ImageStorage::Copy;
+            if (button_row("Copy it into Ninja Impact's data folder", copy_options)) choice = install::ImageStorage::Copy;
             ImGui::Indent(std::round(16.0f * layer.scale()));
             paragraph(copy_note, room ? colors::kTextDim : colors::kDanger);
             ImGui::Unindent(std::round(16.0f * layer.scale()));
             ImGui::Dummy({0.0f, font() * 0.4f});
             const std::string place_note = "Saves " + human_size(info.size_bytes) +
                 ". The image must then stay where it is; if it moves, "
-                "Yakumo asks you to set up again.";
+                "Ninja Impact asks you to set up again.";
             if (first && !room) focus_next_row();
             if (button_row("Use it where it is")) choice = install::ImageStorage::InPlace;
             ImGui::Indent(std::round(16.0f * layer.scale()));
             paragraph(place_note, colors::kTextDim);
             ImGui::Unindent(std::round(16.0f * layer.scale()));
             first = false;
-            layer.set_description("Either way, the game's executable is prepared from the image into Yakumo's data "
+            layer.set_description("Either way, the game's executable is prepared from the image into Ninja Impact's data "
                                   "folder.");
             begin_footer();
             hints({{Control::Confirm, "Continue"}, {Control::Back, "Choose another file"}});
@@ -405,7 +405,7 @@ bool SetupScreens::offer_retry(const std::string &message) {
             ImGui::Dummy({0.0f, font() * 0.8f});
             answer = button_pair("Choose another file", "Quit", first);
             first = false;
-            layer.set_description(std::string("Yakumo supports only ") + install::kGameTitle + ", " +
+            layer.set_description(std::string("Ninja Impact supports only ") + install::kGameTitle + ", " +
                 install::kDiscIdDisplay + ", as an unmodified, uncompressed .iso image.");
             begin_footer();
             hints({{Control::Confirm, "Select"}, {Control::Back, "Quit"}});
@@ -428,11 +428,11 @@ void SetupScreens::finished(const fs::path &data_dir) {
             ImGui::Dummy({0.0f, font() * 0.3f});
 #if defined(MHP3RD_ANDROID_APP)
             paragraph("In the game, Back, the menu button at the top of the touch controls, or L3+R3 on a gamepad "
-                      "(both sticks pressed) opens Yakumo's menu, with the settings and the way back to this setup. "
+                      "(both sticks pressed) opens Ninja Impact's menu, with the settings and the way back to this setup. "
                       "Touch the screen to show the touch controls.",
                 colors::kTextDim);
 #else
-            paragraph("In the game, Esc or L3+R3 (both sticks pressed) opens Yakumo's menu, with the settings and the "
+            paragraph("In the game, Esc or L3+R3 (both sticks pressed) opens Ninja Impact's menu, with the settings and the "
                       "way back to this setup.",
                 colors::kTextDim);
 #endif

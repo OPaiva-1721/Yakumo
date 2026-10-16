@@ -216,7 +216,7 @@ bool Menu::frame() {
         return true;
     }
 
-    begin_panel("##menu", "Yakumo", paused_ ? "Paused" : "Running", true);
+    begin_panel("##menu", "Ninja Impact", paused_ ? "Paused" : "Running", true);
 #if defined(MHP3RD_DEBUG_MENU)
     // The developer tools' page, in developer builds run with MHP3RD_DEBUG_MENU=1.
     const int tab_count = debug::enabled() ? 8 : 7;
@@ -557,7 +557,7 @@ void Menu::video() {
         RowOptions o = options_for("video.gpu_compat",
             "Helps with graphics problems on some GPU drivers. May lower FPS or cause stuttering by disabling "
             "renderer optimizations. Auto enables it only when the GPU self-test fails or a shader cannot be "
-            "created. Changes apply after restarting Yakumo. Active now: " +
+            "created. Changes apply after restarting Ninja Impact. Active now: " +
                 renderer().gpu_compat_status() + ".");
         if (const int delta = choice_row("GPU Compatibility (restart required)", kCompat[current], o)) {
             s.gpu_compat = static_cast<settings::GpuCompat>(cycle(current, delta, 3));
@@ -566,7 +566,7 @@ void Menu::video() {
     }
     font_rows();
     section("Reset to Defaults:");
-    if (button_row("Restore Video Defaults", {false, {}, "Every setting on this page back to how Yakumo ships."})) {
+    if (button_row("Restore Video Defaults", {false, {}, "Every setting on this page back to how Ninja Impact ships."})) {
         const settings::Settings &d = settings::defaults();
         const auto restore = [&](const char *key, auto &value, const auto &fallback) {
             if (settings::overridden_by(key) == nullptr) value = fallback;
@@ -1101,7 +1101,7 @@ void Menu::controls() {
     if (button_row("Restore Control Defaults",
             {false, {},
                 "Every gamepad, keyboard, mouse, touch and name setting back to how "
-                "Yakumo ships, with the Default preset. Your own presets and the touch layouts' "
+                "Ninja Impact ships, with the Default preset. Your own presets and the touch layouts' "
                 "arrangement are kept."})) {
         const settings::Settings &d = settings::defaults();
         const auto restore = [&](const char *key, auto &value, const auto &fallback) {
@@ -1578,7 +1578,7 @@ void Menu::qol() {
         info_row("Screenshot", binds_of(input::Action::Screenshot));
     }
     section("Reset to Defaults:");
-    if (button_row("Restore QoL Defaults", {false, {}, "Every setting on this page back to how Yakumo ships."})) {
+    if (button_row("Restore QoL Defaults", {false, {}, "Every setting on this page back to how Ninja Impact ships."})) {
         const settings::Settings &d = settings::defaults();
         const auto restore = [&](const char *key, auto &value, const auto &fallback) {
             if (settings::overridden_by(key) == nullptr) value = fallback;
@@ -1680,12 +1680,12 @@ void Menu::system() {
         settings::save();
     }
 
-    if (button_row("Quit Game", {false, {}, "Close Yakumo. Progress since your last save is lost."}, colors::kDanger))
+    if (button_row("Quit Game", {false, {}, "Close Ninja Impact. Progress since your last save is lost."}, colors::kDanger))
         confirm_ = Confirm::Quit;
 
     section("Game Data:");
 #if !defined(MHP3RD_ANDROID_APP)
-    if (button_row("Open the Data Folder", {false, {}, "Show Yakumo's data folder in the file manager."})) {
+    if (button_row("Open the Data Folder", {false, {}, "Show Ninja Impact's data folder in the file manager."})) {
         if (!SDL_OpenURL(folder_url(path_from_utf8(data_dir)).c_str()))
             std::cout << "[menu] cannot open " << data_dir << ": " << SDL_GetError() << "\n";
     }
@@ -1721,11 +1721,11 @@ void Menu::system() {
     (void)data_dir;
     if (button_row("Save the Log…",
             {false, {},
-                "Copies Yakumo's logs (this run's, the previous run's, the last "
+                "Copies Ninja Impact's logs (this run's, the previous run's, the last "
                 "error's and the logs folder) to a folder you pick, to send with a "
                 "problem report."})) {
         const auto saved = android::save_logs(install::user_data_directory(),
-            "Yakumo log " + savedata::timestamp_for_path(std::chrono::system_clock::now()));
+            "Ninja Impact log " + savedata::timestamp_for_path(std::chrono::system_clock::now()));
         if (saved) saved_log_path() = saved->error.empty() ? saved->where : "Not saved: " + saved->error;
     }
     if (!saved_log_path().empty()) info_row("Log", saved_log_path());
@@ -1734,7 +1734,7 @@ void Menu::system() {
     save_rows();
 
     section("About:");
-    info_row("Yakumo", std::string(kYakumoVersion));
+    info_row("Ninja Impact", std::string(kYakumoVersion));
     info_row("Game", std::string(install::kGameTitle) + " (" + install::kDiscIdDisplay + ")");
     {
         std::string where = data_dir;
@@ -1795,7 +1795,7 @@ bool Menu::confirm_dialog() {
         const bool quit = confirm_ == Confirm::Quit;
         heading(quit ? "Quit the game?" : "Set up game data again?");
         paragraph(quit ? "Progress since your last save is lost."
-                       : "Yakumo closes the game and opens the setup, where you choose the disc image again. "
+                       : "Ninja Impact closes the game and opens the setup, where you choose the disc image again. "
                          "Progress since your last save is lost.",
             colors::kTextDim);
         ImGui::Dummy({0.0f, font * 0.6f});
@@ -1998,8 +1998,8 @@ void draw_gpu_compat_notice(const GpuCompatNotice &notice) {
             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(notice.activation == settings::GpuCompat::Auto
-            ? "Yakumo: GPU Compatibility enabled automatically (Auto)"
-            : "Yakumo: GPU Compatibility enabled (On)");
+            ? "Ninja Impact: GPU Compatibility enabled automatically (Auto)"
+            : "Ninja Impact: GPU Compatibility enabled (On)");
     ImGui::TextUnformatted("May reduce performance. Review this setting in Video > GPU Compatibility.");
     ImGui::PopTextWrapPos();
     ImGui::End();

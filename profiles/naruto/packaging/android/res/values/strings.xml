@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Yakumo</string>
+    <string name="app_name">Ninja Impact</string>
     <!-- The window reaches into a display cutout on the short edges (the
          sides, in landscape) from the moment it is made; otherwise Android
          keeps the window beside the cutout and fills that strip with black. -->

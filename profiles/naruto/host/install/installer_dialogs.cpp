@@ -28,7 +28,7 @@ namespace mhp3rd::install {
 #if defined(MHP3RD_HAS_SDL)
 namespace {
 
-constexpr const char *kTitle = "Yakumo setup";
+constexpr const char *kTitle = "Ninja Impact setup";
 
 struct Button {
     int id;
@@ -62,14 +62,14 @@ public:
         // The setup screens could not be shown (the game's window or its
         // renderer failed), so these dialogs stand in for them.
         (void)data_dir;
-        const std::string text = std::string("Yakumo needs your own copy of ") + kGameTitle + " (" + kDiscIdDisplay +
+        const std::string text = std::string("Ninja Impact needs your own copy of ") + kGameTitle + " (" + kDiscIdDisplay +
             ") as a disc image (.iso).\n\n"
-            "Choose the image next, in Android's file picker. Yakumo copies it into its own "
+            "Choose the image next, in Android's file picker. Ninja Impact copies it into its own "
             "storage (about 1.3 GB), checks it and prepares the game from it.";
 #else
-        std::string text = std::string("Yakumo needs your own copy of ") + kGameTitle + " (" + kDiscIdDisplay +
+        std::string text = std::string("Ninja Impact needs your own copy of ") + kGameTitle + " (" + kDiscIdDisplay +
             ") as a disc image (.iso).\n\n"
-            "Choose the image next. Yakumo checks it, prepares the game's executable from it and "
+            "Choose the image next. Ninja Impact checks it, prepares the game's executable from it and "
             "copies it into its data folder, so the game keeps working if you move or delete the "
             "original. You can also choose to use the image where it is.\n\n"
             "Data folder:\n" +
@@ -91,7 +91,7 @@ public:
         if (!uri) return std::nullopt;
         std::cout << "[setup] picked " << *uri << std::endl;
         ask(SDL_MESSAGEBOX_INFORMATION, kTitle,
-            "Yakumo copies the disc image into its own storage now. This takes a minute or two, and nothing moves "
+            "Ninja Impact copies the disc image into its own storage now. This takes a minute or two, and nothing moves "
             "on the screen until it is done.",
             {{ 0,
                 "OK",
@@ -146,7 +146,7 @@ public:
         const std::string size = std::to_string(tenths / 10u) + "." + std::to_string(tenths % 10u) + " GB";
         const std::string text = "The image is " + std::string(kGameTitle) + " (" + kDiscIdDisplay +
             ") and passed its checks.\n\n"
-            "Copy it into Yakumo's data folder (recommended, " +
+            "Copy it into Ninja Impact's data folder (recommended, " +
             size +
             "), so the game keeps working if the original is moved or deleted?\n\n"
             "Or use it where it is, to save space. The image must then stay at:\n" +

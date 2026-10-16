@@ -479,7 +479,7 @@ void review_screen(bool back) {
         const std::string label = replacing > 0 ? "Replace and import"
             : importable == 1                   ? "Import this save"
                                                 : "Import these saves";
-        std::string description = "Copies the save" + std::string(importable == 1 ? "" : "s") + " into Yakumo.";
+        std::string description = "Copies the save" + std::string(importable == 1 ? "" : "s") + " into Ninja Impact.";
         if (replacing > 0)
             description += " The save" + std::string(replacing == 1 ? " it replaces is" : "s they replace are") +
                 " not deleted: " + (replacing == 1 ? "it moves" : "they move") +
@@ -651,7 +651,7 @@ void reminder_screen(bool back) {
     const std::vector<std::string> names = sd::saves_to_back_up(sd::memory_stick());
     section("Back up your saves");
     ImGui::Indent(px(16.0f));
-    paragraph(s.reminder_reason.empty() ? "This is the first start of Yakumo " + sd::release_of(kYakumoVersion) +
+    paragraph(s.reminder_reason.empty() ? "This is the first start of Ninja Impact " + sd::release_of(kYakumoVersion) +
                 ". Before you play, make a copy of your saves: a new version, an import or a crash while "
                 "saving could damage them, and a backup is the only way to get them back."
                                         : s.reminder_reason);
@@ -732,7 +732,7 @@ void save_rows() {
     settings::Settings &settings = settings::current();
     if (toggle_row("Remind Me to Back Up After Updates", settings.backup_reminder,
             {false, {},
-                "On: the first time a new version of Yakumo starts, it asks you to back up your saves, with a "
+                "On: the first time a new version of Ninja Impact starts, it asks you to back up your saves, with a "
                 "button that does it for you."})) {
         settings.backup_reminder = !settings.backup_reminder;
         settings::save();
@@ -856,7 +856,7 @@ bool run_backup_reminder() {
             const bool back = layer.take_back() ||
                 ImGui::IsKeyPressed(
                     layer.confirm_south() ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown, false);
-            begin_panel("##backup", "Yakumo", "Paused", true);
+            begin_panel("##backup", "Ninja Impact", "Paused", true);
             begin_content();
             const bool open = save_screen(back);
             begin_footer();

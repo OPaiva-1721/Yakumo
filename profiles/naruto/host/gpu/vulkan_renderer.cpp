@@ -851,7 +851,7 @@ struct VulkanRenderer::Impl {
             content_rect.extent.height, picture_rect.offset.x, picture_rect.offset.y, picture_rect.extent.width,
             picture_rect.extent.height);
         std::cout << "[render] " << line << "\n";
-        SDL_Log("Yakumo: %s", line);
+        SDL_Log("Ninja Impact: %s", line);
     }
 #endif
     std::vector<VkImage> swapchain_images;
@@ -939,8 +939,8 @@ struct VulkanRenderer::Impl {
         // the GPU and the phone, and offer the log before the app closes.
         const std::string text = std::string("The GPU stopped responding (VK_ERROR_DEVICE_LOST) in ") + where +
             ".\n\n" + facts.name + ", driver " + facts.driver_version_text() + "\n" + android::system_summary() +
-            "\n\nYakumo has to close. Please send us the log (Save the log…).";
-        android::fatal_error("Yakumo: graphics error", text, 3);
+            "\n\nNinja Impact has to close. Please send us the log (Save the log…).";
+        android::fatal_error("Ninja Impact: graphics error", text, 3);
 #else
         std::_Exit(3);
 #endif
@@ -2556,7 +2556,7 @@ bool VulkanRenderer::initialize(const RendererConfig &config, std::string &error
     if (portability_enumeration) extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 
     VkApplicationInfo application{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    application.pApplicationName = "Yakumo";
+    application.pApplicationName = "Ninja Impact";
     application.apiVersion = VK_API_VERSION_1_1;
     VkInstanceCreateInfo instance_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     instance_info.pApplicationInfo = &application;
@@ -2621,7 +2621,7 @@ bool VulkanRenderer::initialize(const RendererConfig &config, std::string &error
     if (const std::vector<std::string> missing =
             missing_requirements(impl.physical_device, impl.facts, kVertexBufferTotal);
         !missing.empty()) {
-        error = impl.facts.name + " (driver " + impl.facts.driver_version_text() + ") lacks what Yakumo needs:";
+        error = impl.facts.name + " (driver " + impl.facts.driver_version_text() + ") lacks what Ninja Impact needs:";
         for (std::size_t i = 0; i < missing.size(); ++i) error += (i == 0u ? " " : "; ") + missing[i];
         return false;
     }
@@ -3109,7 +3109,7 @@ bool VulkanRenderer::initialize(const RendererConfig &config, std::string &error
         log_line(std::string("[gpu-selftest] ") + (passed ? "passed" : "FAILED") + " with the " + shader +
             " fragment shader in " + std::to_string(static_cast<int>(ms)) + " ms: " + detail);
         if (!passed)
-            impl.set_problem("The GPU drew Yakumo's start-up test picture wrong (" + detail +
+            impl.set_problem("The GPU drew Ninja Impact's start-up test picture wrong (" + detail +
                 "), so the game's picture may be missing or wrong." +
                 (impl.gpu_compat_auto ? " Video > GPU compatibility On also leaves out robust buffer access, from the "
                                         "next start."
@@ -3313,7 +3313,7 @@ bool VulkanRenderer::Impl::create_swapchain(std::string &error) {
     std::cout << "[render] swapchain " << swapchain_builds << " for " << extent.width << "x" << extent.height
               << ", surface transform 0x" << std::hex << static_cast<unsigned>(transform) << std::dec
               << " (a quarter turn x" << swapchain_quarter_turns << ")\n";
-    SDL_Log("Yakumo: swapchain %u for %ux%u, surface transform 0x%x", swapchain_builds, extent.width, extent.height,
+    SDL_Log("Ninja Impact: swapchain %u for %ux%u, surface transform 0x%x", swapchain_builds, extent.width, extent.height,
         static_cast<unsigned>(transform));
 #endif
     swapchain_extent = extent;

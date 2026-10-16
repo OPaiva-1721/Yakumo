@@ -33,8 +33,8 @@ constexpr const char *kFields[kTargets] = {
 
 constexpr std::string_view kPlatformField = "platform:";
 constexpr std::string_view kHeader =
-    "# Gamepad mappings for Yakumo, one per line, in the format of SDL and of the community's\n"
-    "# SDL_GameControllerDB. Yakumo reads this file at start. Controls > Controllers adds the\n"
+    "# Gamepad mappings for Ninja Impact, one per line, in the format of SDL and of the community's\n"
+    "# SDL_GameControllerDB. Ninja Impact reads this file at start. Controls > Controllers adds the\n"
     "# controllers you set up there; mappings from SDL_GameControllerDB can be pasted here too.\n";
 
 std::string_view trim(std::string_view text) {

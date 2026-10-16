@@ -401,7 +401,7 @@ void review_screen(bool back) {
                 (s.document_staging.empty() ? "Use it where it is instead."
                                             : "Free some space, then choose the folder again.");
         if (is_installed) copy_note = "This is the installed pack already.";
-        const char *label = installed_exists ? "Copy and replace" : "Copy into Yakumo's data folder";
+        const char *label = installed_exists ? "Copy and replace" : "Copy into Ninja Impact's data folder";
         // The focus starts on the first thing the player can do; the rows
         // above are a scroll away.
         if (room && !is_installed) focus_first();

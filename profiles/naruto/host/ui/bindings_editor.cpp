@@ -518,7 +518,7 @@ void conflict_lines(Target action, const Columns &c, bool locked, input::PadStyl
                 st.focus_action = action;
             }
             if (keep.focused || keep.hovered)
-                Layer::get().set_description("Keep both: one press does both. The warning goes away until Yakumo "
+                Layer::get().set_description("Keep both: one press does both. The warning goes away until Ninja Impact "
                                              "starts again.");
             if (remove.focused || remove.hovered)
                 Layer::get().set_description("Takes " + chord_label(conflict.theirs, pad, style) + " away from " +

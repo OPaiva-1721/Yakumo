@@ -125,7 +125,7 @@ void start_import(const fs::path &chosen) {
 
 bool browse(bool back) {
     State &s = state();
-    indented("Import: choose a translation file (.lang) you downloaded. It is copied into Yakumo's translations "
+    indented("Import: choose a translation file (.lang) you downloaded. It is copied into Ninja Impact's translations "
              "folder, then appears under Game text language above.");
 #if !defined(MHP3RD_ANDROID_APP)
     indented("You can also drop the file on the window.", colors::kTextDim);
@@ -194,7 +194,7 @@ void translation_rows() {
     }
     if (button_row("Import Translation…",
             {false, {},
-                "Copy a translation file (.lang) you downloaded into Yakumo. It appears under Game Text "
+                "Copy a translation file (.lang) you downloaded into Ninja Impact. It appears under Game Text "
                 "Language; a restart loads it."}))
         open_browser();
 #if !defined(MHP3RD_ANDROID_APP)

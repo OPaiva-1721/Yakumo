@@ -17,8 +17,8 @@
 namespace mhp3rd::install {
 namespace {
 
-constexpr const char *kOrganization = "Yakumo";
-constexpr const char *kApplication = "MHP3rd";
+constexpr const char *kOrganization = "NinjaImpact";
+constexpr const char *kApplication = "ULES01537";
 
 std::string trim(const std::string &text) {
     const auto first = text.find_first_not_of(" \t\r\n");
@@ -127,16 +127,16 @@ std::filesystem::path user_data_directory() {
 std::string check_writable(const std::filesystem::path &directory) {
     std::error_code ec;
     std::filesystem::create_directories(directory, ec);
-    if (ec) return "Yakumo cannot create its data folder:\n" + path_to_utf8(directory) + "\n\n" + ec.message();
+    if (ec) return "Ninja Impact cannot create its data folder:\n" + path_to_utf8(directory) + "\n\n" + ec.message();
     const std::filesystem::path probe = directory / ".yakumo-write-check";
     {
         std::ofstream out(probe, std::ios::trunc | std::ios::binary);
-        out << "Yakumo checks that it can write here; this file is removed at once.\n";
+        out << "Ninja Impact checks that it can write here; this file is removed at once.\n";
         out.close();
         if (!out) {
             std::filesystem::remove(probe, ec);
-            return "Yakumo cannot write to its data folder:\n" + path_to_utf8(directory) +
-                "\n\nIt keeps its settings and saves there. Move Yakumo to a folder you can write to, or give "
+            return "Ninja Impact cannot write to its data folder:\n" + path_to_utf8(directory) +
+                "\n\nIt keeps its settings and saves there. Move Ninja Impact to a folder you can write to, or give "
                 "your user write access to this one.";
         }
     }
@@ -243,7 +243,7 @@ void write_settings_file(const std::filesystem::path &data_dir, const SettingsEn
     const std::filesystem::path partial = data_dir / (std::string(kSettingsFile) + ".part");
     {
         std::ofstream out(partial, std::ios::trunc);
-        out << "# Written by Yakumo: the installer and the in-game menu (Esc, or L3+R3 on a gamepad).\n"
+        out << "# Written by Ninja Impact: the installer and the in-game menu (Esc, or L3+R3 on a gamepad).\n"
             << "# disc_image: the disc image to play from; a relative path is inside this directory.\n";
         for (const auto &[key, value] : entries) out << key << "=" << value << "\n";
         if (!out) throw psprecomp::Error("Cannot write " + path_to_utf8(partial));

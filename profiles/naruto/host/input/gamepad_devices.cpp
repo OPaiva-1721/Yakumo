@@ -255,7 +255,7 @@ std::string remove_mapping(SDL_JoystickID id) {
     }
     // SDL cannot forget a mapping: clearing one leaves a gamepad with nothing
     // mapped, which would look connected and do nothing.
-    return "Removed from the file. The layout stays in use until Yakumo starts again.";
+    return "Removed from the file. The layout stays in use until Ninja Impact starts again.";
 }
 
 } // namespace mhp3rd::input::devices

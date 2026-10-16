@@ -102,14 +102,14 @@ Inspection inspect(const std::filesystem::path &path) {
     const std::string name = display_name(path);
     std::error_code ec;
     if (!std::filesystem::is_regular_file(path, ec))
-        throw InstallError("\"" + path_to_utf8(path) + "\" is not a file Yakumo can open.");
+        throw InstallError("\"" + path_to_utf8(path) + "\" is not a file Ninja Impact can open.");
     {
         std::ifstream in(path, std::ios::binary);
         std::array<char, 4> magic{};
         if (!in.read(magic.data(), magic.size())) throw InstallError("\"" + name + "\" is empty or cannot be read.");
         if (std::memcmp(magic.data(), "CISO", 4u) == 0 || std::memcmp(magic.data(), "ZISO", 4u) == 0)
             throw InstallError("\"" + name +
-                "\" is a compressed image. Yakumo needs an uncompressed .iso image of the "
+                "\" is a compressed image. Ninja Impact needs an uncompressed .iso image of the "
                 "disc; decompress it first.");
     }
 
@@ -118,14 +118,14 @@ Inspection inspect(const std::filesystem::path &path) {
         iso.emplace(path);
     } catch (const std::exception &) {
         throw InstallError("\"" + name +
-            "\" is not a disc image Yakumo can read. Choose an uncompressed .iso image "
+            "\" is not a disc image Ninja Impact can read. Choose an uncompressed .iso image "
             "of the game's PSP disc.");
     }
 
     const auto sfo_entry = iso->find(kParamSfoPathOnDisc);
     if (!sfo_entry || sfo_entry->directory) {
         if (iso->find("PS3_GAME/PARAM.SFO"))
-            throw InstallError("\"" + name + "\" is a PlayStation 3 disc image. Yakumo needs the PSP disc image of " +
+            throw InstallError("\"" + name + "\" is a PlayStation 3 disc image. Ninja Impact needs the PSP disc image of " +
                 kGameTitle + ": an .iso whose top level holds a PSP_GAME folder.");
         throw InstallError("\"" + name + "\" is not a PSP game disc image: it has no PSP_GAME/PARAM.SFO.");
     }
@@ -133,19 +133,16 @@ Inspection inspect(const std::filesystem::path &path) {
     const auto disc_id = sfo.find("DISC_ID");
     if (disc_id == sfo.end())
         throw InstallError("\"" + name +
-            "\" has no disc id in PSP_GAME/PARAM.SFO, so it is not an image Yakumo "
+            "\" has no disc id in PSP_GAME/PARAM.SFO, so it is not an image Ninja Impact "
             "supports.");
     if (disc_id->second != kDiscId) {
         const auto title = sfo.find("TITLE");
         std::string what = "\"" + name + "\" is ";
         what += title != sfo.end() && !title->second.empty() ? title->second + " (" + disc_id->second + ")"
                                                              : "disc " + disc_id->second;
-        what += ". Yakumo supports only " + std::string(kGameTitle) + ", the Japanese release with disc id " +
+        what += ". Ninja Impact supports only " + std::string(kGameTitle) + ", the European release with disc id " +
             kDiscIdDisplay + ".";
-        if (disc_id->second == "ULJM05800")
-            what += " This is the original PSP release of the game, which Yakumo does not support.";
-        else
-            what += " Other releases and regions are not supported.";
+        what += " Other releases and regions are not supported.";
         throw InstallError(what);
     }
 
@@ -158,7 +155,7 @@ Inspection inspect(const std::filesystem::path &path) {
     result.eboot_bin = read_file(*iso, *eboot_entry);
     if (psprecomp::sha256_bytes(result.eboot_bin) != kEncryptedExecutableSha256)
         throw InstallError("\"" + name + "\" is " + kGameTitle + " (" + kDiscIdDisplay +
-            "), but its executable is not the version Yakumo supports. The image may be patched, "
+            "), but its executable is not the version Ninja Impact supports. The image may be patched, "
             "modified or damaged; make it again from an unmodified disc.");
     result.info.size_bytes = iso->size_bytes();
     return result;
@@ -321,7 +318,7 @@ bool is_document_uri(const std::filesystem::path &image) {
 std::filesystem::path copy_image_document(
     const std::string &uri, const std::filesystem::path &data_dir, const ProgressFn &progress) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Yakumo read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
     struct stat info{};
     const std::uint64_t size = ::fstat(fd, &info) == 0 ? static_cast<std::uint64_t>(info.st_size) : 0u;
     // The copy, with room to spare for the executable prepared from it.
@@ -374,7 +371,7 @@ constexpr std::uint64_t kLargestKeysFile = 64u * 1024u;
 
 std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t limit) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Yakumo read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
     std::vector<std::uint8_t> data;
     std::vector<std::uint8_t> buffer(1u << 20);
     for (;;) {
@@ -398,7 +395,7 @@ std::vector<std::uint8_t> read_document(const std::string &uri, std::uint64_t li
 
 DocumentKind classify_document(const std::string &uri) {
     const int fd = android::open_document(uri, "r");
-    if (fd < 0) throw InstallError("Android would not let Yakumo read that file. Choose it again.");
+    if (fd < 0) throw InstallError("Android would not let Ninja Impact read that file. Choose it again.");
     struct stat info{};
     const std::uint64_t size = ::fstat(fd, &info) == 0 ? static_cast<std::uint64_t>(info.st_size) : 0u;
     std::array<unsigned char, 4> magic{};
@@ -549,7 +546,7 @@ int restart(char **argv) {
     // An app cannot exec itself; Android starts it again instead.
     (void)argv;
     android::relaunch();
-    std::cerr << "Cannot restart; start Yakumo again to load the imported save\n";
+    std::cerr << "Cannot restart; start Ninja Impact again to load the imported save\n";
     return 1;
 #endif
     const std::filesystem::path self = executable_path();
@@ -587,7 +584,7 @@ int restart_for_setup(const char *program) {
         std::ofstream(user_data_directory() / kSetupMarkerFile) << "setup\n";
     }
     android::relaunch();
-    std::cerr << "Start Yakumo again to set up\n";
+    std::cerr << "Start Ninja Impact again to set up\n";
     return 1;
 #endif
     // The player asked for the setup: a game directory chosen for this run

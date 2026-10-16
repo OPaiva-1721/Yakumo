@@ -520,7 +520,7 @@ void equipment_buttons(ModSession &session, const Mod &mod) {
     indented(s.equip_note, s.equip_failed ? colors::kDanger : colors::kText);
     if (!s.equip_failed && !session.restart_pending())
         indented("The hunter shows it the next time the game loads these models: at the item box (Manage "
-                 "Equipment), change to other equipment and back, or restart Yakumo. Putting on what the hunter "
+                 "Equipment), change to other equipment and back, or restart Ninja Impact. Putting on what the hunter "
                  "already wears, or moving between the village and the Guild Hall, keeps the models already loaded.");
 }
 
@@ -650,7 +650,7 @@ void list(ModSession &session) {
     if (button_row("Import Mod…",
             {false, {},
                 "Copy a mod you downloaded into the mods folder: choose its unpacked folder, the one with its "
-                "mod.ini. Yakumo does not download mods; unpack .zip, .rar or .7z archives first."}))
+                "mod.ini. Ninja Impact does not download mods; unpack .zip, .rar or .7z archives first."}))
         open_browser();
 #if !defined(MHP3RD_ANDROID_APP)
     if (button_row("Open the Mods Folder",

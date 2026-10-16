@@ -112,7 +112,7 @@ void unpack_bundled_game_files() {
         }
         SDL_free(data);
         std::filesystem::rename(partial, target, ec);
-        std::printf("Yakumo: unpacked bundled %s\n", name);
+        std::printf("Ninja Impact: unpacked bundled %s\n", name);
     }
 }
 
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
     pthread_attr_setstacksize(&attributes, kGameStackBytes);
     pthread_t thread;
     if (pthread_create(&thread, &attributes, run_game, &launch) != 0) {
-        std::fprintf(stderr, "Yakumo: cannot start the game thread with a %zu MiB stack\n", kGameStackBytes >> 20);
+        std::fprintf(stderr, "Ninja Impact: cannot start the game thread with a %zu MiB stack\n", kGameStackBytes >> 20);
         pthread_attr_destroy(&attributes);
         return 1;
     }

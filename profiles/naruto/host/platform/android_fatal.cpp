@@ -29,7 +29,7 @@ std::string log_folder_name() {
     std::tm local{};
     localtime_r(&now, &local);
     char text[64];
-    std::strftime(text, sizeof(text), "Yakumo log %Y-%m-%d %H-%M-%S", &local);
+    std::strftime(text, sizeof(text), "Ninja Impact log %Y-%m-%d %H-%M-%S", &local);
     return text;
 }
 
